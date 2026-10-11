@@ -1,13 +1,33 @@
-import { Prisma, type PrismaClient, type NotificationEventType } from "../../../generated/prisma/client.js";
+import {
+  Prisma,
+  type PrismaClient,
+  type NotificationEventType,
+} from "../../../generated/prisma/client.js";
 import { ApiError } from "../../shared/http.js";
 import { freshTime, lockStaff } from "../scheduling/coordination.js";
 import { loadAvailabilityData } from "../availability/availability.data.js";
-import { calculateAvailability, planAt, type AvailabilityData } from "../availability/availability.engine.js";
+import {
+  calculateAvailability,
+  planAt,
+  type AvailabilityData,
+} from "../availability/availability.engine.js";
 import type { AvailabilityInput } from "../availability/availability.schema.js";
-import { createGuestCredentials, validGuestAccess } from "./appointments.security.js";
-import { guestSelect, guestView, reservationTransaction, RestartReservation } from "./appointments.service.js";
+import {
+  createGuestCredentials,
+  validGuestAccess,
+} from "./appointments.security.js";
+import {
+  guestSelect,
+  guestView,
+  reservationTransaction,
+  RestartReservation,
+} from "./appointments.service.js";
 import { Temporal } from "@js-temporal/polyfill";
-import type { AppointmentListQuery, ChangeInput, ChangeSearch } from "./appointments.schema.js";
+import type {
+  AppointmentListQuery,
+  ChangeInput,
+  ChangeSearch,
+} from "./appointments.schema.js";
 
 /**
  * Shorthand type alias for Prisma's transaction client.
@@ -33,7 +53,8 @@ type Row = Prisma.AppointmentGetPayload<{ include: typeof include }>;
 /**
  * Helper to construct an HTTP 409 Conflict error when an appointment modification is prohibited.
  */
-const conflict = (message: string) => new ApiError(409, "CHANGE_NOT_ALLOWED", message);
+const conflict = (message: string) =>
+  new ApiError(409, "CHANGE_NOT_ALLOWED", message);
 
 /**
  * Validates whether an appointment is eligible for rescheduling or no-show recovery.
@@ -56,25 +77,38 @@ export function validateChangeEligibility(
     startAt: Date;
     rescheduleCount: number;
     recoveryAppointment: unknown;
-    bookingPolicyVersion: { maxReschedules: number; rescheduleCutoffHours: number; noShowGraceHours: number };
+    bookingPolicyVersion: {
+      maxReschedules: number;
+      rescheduleCutoffHours: number;
+      noShowGraceHours: number;
+    };
   },
   recovery: boolean,
   now: Date,
 ) {
   const policy = row.bookingPolicyVersion;
   if (row.rescheduleCount >= policy.maxReschedules) {
-    throw conflict("The maximum number of appointment changes has been reached.");
+    throw conflict(
+      "The maximum number of appointment changes has been reached.",
+    );
   }
   if (recovery) {
     if (row.status !== "NO_SHOW" || row.recoveryAppointment) {
-      throw conflict("This appointment is not eligible for another recovery booking.");
+      throw conflict(
+        "This appointment is not eligible for another recovery booking.",
+      );
     }
     if (+now > +row.startAt + policy.noShowGraceHours * 3_600_000) {
       throw conflict("The no-show recovery grace period has ended.");
     }
   } else {
-    if (row.status !== "CONFIRMED" || +now > +row.startAt - policy.rescheduleCutoffHours * 3_600_000) {
-      throw conflict("This appointment can no longer be rescheduled. Please contact the salon.");
+    if (
+      row.status !== "CONFIRMED" ||
+      +now > +row.startAt - policy.rescheduleCutoffHours * 3_600_000
+    ) {
+      throw conflict(
+        "This appointment can no longer be rescheduled. Please contact the salon.",
+      );
     }
   }
 }
@@ -89,8 +123,17 @@ export function validateChangeEligibility(
  * @throws {ApiError} 409 Conflict if staff has already begun recording service outcomes.
  */
 function pristine(row: Row) {
-  if (row.completedAt || row.appointmentServices.some(s => s.membershipStatus === "ACTIVE" && (s.outcome !== "SCHEDULED" || s.outcomeFinalizedAt))) {
-    throw conflict("Service outcomes have already been recorded. Please contact the salon.");
+  if (
+    row.completedAt ||
+    row.appointmentServices.some(
+      (s) =>
+        s.membershipStatus === "ACTIVE" &&
+        (s.outcome !== "SCHEDULED" || s.outcomeFinalizedAt),
+    )
+  ) {
+    throw conflict(
+      "Service outcomes have already been recorded. Please contact the salon.",
+    );
   }
 }
 
@@ -104,8 +147,10 @@ function pristine(row: Row) {
 async function admin(tx: Tx, actorId: string) {
   await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${actorId}::uuid FOR SHARE`;
   const user = await tx.user.findUnique({ where: { id: actorId } });
-  if (!user?.isActive) throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
-  if (user.role !== "ADMIN") throw new ApiError(403, "FORBIDDEN", "Administrator access is required.");
+  if (!user?.isActive)
+    throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
+  if (user.role !== "ADMIN")
+    throw new ApiError(403, "FORBIDDEN", "Administrator access is required.");
 }
 
 /**
@@ -120,13 +165,24 @@ async function admin(tx: Tx, actorId: string) {
  * @returns The locked appointment row and the array of locked staff IDs.
  */
 async function lockAppointment(tx: Tx, bookingCode: string, token?: string) {
-  const lockedIds = (await tx.staff.findMany({ select: { id: true } })).map(s => s.id);
+  const lockedIds = (await tx.staff.findMany({ select: { id: true } })).map(
+    (s) => s.id,
+  );
   await lockStaff(tx, lockedIds);
   await tx.$queryRaw`SELECT id FROM "Appointment" WHERE "bookingCode" = ${bookingCode} FOR UPDATE`;
-  const row = await tx.appointment.findUnique({ where: { bookingCode }, include });
-  const valid = token === undefined || await validGuestAccess(tx, token, row);
-  if (!row || !valid) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "Unable to access this appointment. Verify your phone number on Your appointment or contact the salon.");
-  if (row.appointmentServices.some(s => !lockedIds.includes(s.staffId))) throw new RestartReservation();
+  const row = await tx.appointment.findUnique({
+    where: { bookingCode },
+    include,
+  });
+  const valid = token === undefined || (await validGuestAccess(tx, token, row));
+  if (!row || !valid)
+    throw new ApiError(
+      404,
+      "APPOINTMENT_NOT_FOUND",
+      "Unable to access this appointment. Verify your phone number on Your appointment or contact the salon.",
+    );
+  if (row.appointmentServices.some((s) => !lockedIds.includes(s.staffId)))
+    throw new RestartReservation();
   return { row, lockedIds };
 }
 
@@ -149,7 +205,7 @@ function snapshot(row: Row): Prisma.InputJsonValue {
     rescheduleCount: row.rescheduleCount,
     recoveryOfAppointmentId: row.recoveryOfAppointmentId,
     carriedAppointmentFeePaymentId: row.carriedAppointmentFeePaymentId,
-    appointmentServices: row.appointmentServices.map(s => ({
+    appointmentServices: row.appointmentServices.map((s) => ({
       id: s.id,
       serviceId: s.serviceId,
       staffId: s.staffId,
@@ -175,7 +231,12 @@ function snapshot(row: Row): Prisma.InputJsonValue {
  *
  * Delivers by EMAIL if an email exists on the customer profile, otherwise falls back to SMS.
  */
-async function notify(tx: Tx, row: Row, eventType: NotificationEventType, now: Date) {
+async function notify(
+  tx: Tx,
+  row: Row,
+  eventType: NotificationEventType,
+  now: Date,
+) {
   await tx.notificationQueue.create({
     data: {
       appointmentId: row.id,
@@ -209,54 +270,103 @@ async function notify(tx: Tx, row: Row, eventType: NotificationEventType, now: D
  * 4. Ensures any newly added services are currently active in the service catalog.
  * 5. Prepares planning data using historical snapshots for retained services.
  */
-async function prepare(tx: Tx, row: Row, lockedIds: string[], input: ChangeSearch, timeZone: string, now: Date) {
+async function prepare(
+  tx: Tx,
+  row: Row,
+  lockedIds: string[],
+  input: ChangeSearch,
+  timeZone: string,
+  now: Date,
+) {
   validateChangeEligibility(row, input.recovery, now);
   pristine(row);
 
   // Match retained services requested by the customer
-  const retained = input.services.map(s => {
+  const retained = input.services.map((s) => {
     if (!s.appointmentServiceId) return undefined;
-    const old = row.appointmentServices.find(old => old.id === s.appointmentServiceId && old.membershipStatus === "ACTIVE" && old.serviceId === s.serviceId);
-    if (input.recovery || !old) throw new ApiError(400, "INVALID_RETAINED_SERVICE", "A retained service must belong to this active appointment schedule.");
+    const old = row.appointmentServices.find(
+      (old) =>
+        old.id === s.appointmentServiceId &&
+        old.membershipStatus === "ACTIVE" &&
+        old.serviceId === s.serviceId,
+    );
+    if (input.recovery || !old)
+      throw new ApiError(
+        400,
+        "INVALID_RETAINED_SERVICE",
+        "A retained service must belong to this active appointment schedule.",
+      );
     return old;
   });
 
-  if (new Set(retained.filter(Boolean).map(s => s!.id)).size !== retained.filter(Boolean).length) {
-    throw new ApiError(400, "INVALID_RETAINED_SERVICE", "A retained service cannot appear twice.");
+  if (
+    new Set(retained.filter(Boolean).map((s) => s!.id)).size !==
+    retained.filter(Boolean).length
+  ) {
+    throw new ApiError(
+      400,
+      "INVALID_RETAINED_SERVICE",
+      "A retained service cannot appear twice.",
+    );
   }
 
   // Construct availability search input
   const selection: AvailabilityInput = {
     date: input.date,
-    services: input.services.map(s => s.assignmentMode === "SPECIFIC"
-      ? { serviceId: s.serviceId, assignmentMode: "SPECIFIC", staffId: s.staffId! }
-      : { serviceId: s.serviceId, assignmentMode: "ANY_AVAILABLE" }),
+    services: input.services.map((s) =>
+      s.assignmentMode === "SPECIFIC"
+        ? {
+            serviceId: s.serviceId,
+            assignmentMode: "SPECIFIC",
+            staffId: s.staffId!,
+          }
+        : { serviceId: s.serviceId, assignmentMode: "ANY_AVAILABLE" },
+    ),
   };
 
   // Load availability from database, excluding current appointment if ordinary reschedule
-  const data = await loadAvailabilityData(tx, selection, timeZone, now, row.bookingPolicyVersion, {
-    retainedServiceIds: retained.flatMap(s => s ? [s.serviceId] : []),
-    excludeAppointmentId: input.recovery ? undefined : row.id,
-  });
+  const data = await loadAvailabilityData(
+    tx,
+    selection,
+    timeZone,
+    now,
+    row.bookingPolicyVersion,
+    {
+      retainedServiceIds: retained.flatMap((s) => (s ? [s.serviceId] : [])),
+      excludeAppointmentId: input.recovery ? undefined : row.id,
+    },
+  );
 
   // The loader allows inactive rows only to recover retained snapshots. An added
   // occurrence of that same service must still independently be active.
   input.services.forEach((s, i) => {
-    if (!retained[i] && !data.services.find(item => item.id === s.serviceId)?.isActive) {
-      throw new ApiError(400, "SERVICE_UNAVAILABLE", "Inactive services cannot be added.");
+    if (
+      !retained[i] &&
+      !data.services.find((item) => item.id === s.serviceId)?.isActive
+    ) {
+      throw new ApiError(
+        400,
+        "SERVICE_UNAVAILABLE",
+        "Inactive services cannot be added.",
+      );
     }
   });
 
-  if (data.staff.some(s => !lockedIds.includes(s.id))) throw new RestartReservation();
+  if (data.staff.some((s) => !lockedIds.includes(s.id)))
+    throw new RestartReservation();
 
   // Create planning data applying historical snapshots for retained services
   const planning: AvailabilityData = {
     ...data,
-    serviceOverrides: retained.map(s => s ? {
-      name: s.serviceNameSnapshot,
-      durationMinutes: s.durationMinutesSnapshot,
-      bufferMinutes: s.bufferMinutesSnapshot,
-    } : undefined),
+    serviceOverrides: retained.map((s) =>
+      s
+        ? {
+            name: s.serviceNameSnapshot,
+            durationMinutes: s.durationMinutesSnapshot,
+            bufferMinutes: s.bufferMinutesSnapshot,
+          }
+        : undefined,
+    ),
   };
 
   return { selection, data, planning, retained };
@@ -269,7 +379,10 @@ async function prepare(tx: Tx, row: Row, lockedIds: string[], input: ChangeSearc
  * @param prisma - Prisma client instance.
  * @param timeZone - The IANA timezone string for the salon (e.g. "Asia/Manila").
  */
-export function createAppointmentChangesService(prisma: PrismaClient, timeZone: string) {
+export function createAppointmentChangesService(
+  prisma: PrismaClient,
+  timeZone: string,
+) {
   return {
     /**
      * Searches for available time slots for rescheduling or no-show recovery.
@@ -280,15 +393,29 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
      * 3. Calculates and returns available time slots for the chosen date.
      */
     async search(input: ChangeSearch) {
-      return reservationTransaction(prisma, async tx => {
-        const { row, lockedIds } = await lockAppointment(tx, input.bookingCode, input.token);
-        const prepared = await prepare(tx, row, lockedIds, input, timeZone, await freshTime(tx));
+      return reservationTransaction(prisma, async (tx) => {
+        const { row, lockedIds } = await lockAppointment(
+          tx,
+          input.bookingCode,
+          input.token,
+        );
+        const prepared = await prepare(
+          tx,
+          row,
+          lockedIds,
+          input,
+          timeZone,
+          await freshTime(tx),
+        );
         const now = await freshTime(tx);
         validateChangeEligibility(row, input.recovery, now);
         return {
           timeZone,
           generatedAt: now.toISOString(),
-          slots: calculateAvailability(prepared.selection, { ...prepared.planning, now }),
+          slots: calculateAvailability(prepared.selection, {
+            ...prepared.planning,
+            now,
+          }),
         };
       });
     },
@@ -313,9 +440,20 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
      */
     async change(input: ChangeInput) {
       const credentials = createGuestCredentials();
-      return reservationTransaction(prisma, async tx => {
-        const { row, lockedIds } = await lockAppointment(tx, input.bookingCode, input.token);
-        const prepared = await prepare(tx, row, lockedIds, input, timeZone, await freshTime(tx));
+      return reservationTransaction(prisma, async (tx) => {
+        const { row, lockedIds } = await lockAppointment(
+          tx,
+          input.bookingCode,
+          input.token,
+        );
+        const prepared = await prepare(
+          tx,
+          row,
+          lockedIds,
+          input,
+          timeZone,
+          await freshTime(tx),
+        );
 
         // Lock every potential source payment before the fresh eligibility decision.
         // Only an original, successful obligation payment can supply this credit.
@@ -327,8 +465,16 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
         validateChangeEligibility(row, input.recovery, now);
 
         // Plan exact staff assignments and service timings for the chosen start time
-        const plan = planAt(prepared.selection, new Date(input.startAt), { ...prepared.planning, now });
-        if (!plan) throw new ApiError(409, "SLOT_UNAVAILABLE", "This visit is no longer available. Please choose another time.");
+        const plan = planAt(prepared.selection, new Date(input.startAt), {
+          ...prepared.planning,
+          now,
+        });
+        if (!plan)
+          throw new ApiError(
+            409,
+            "SLOT_UNAVAILABLE",
+            "This visit is no longer available. Please choose another time.",
+          );
 
         const beforeSnapshot = snapshot(row);
         let targetId = row.id;
@@ -361,10 +507,15 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
               status: credit ? "CONFIRMED" : "PENDING_PAYMENT",
               confirmedAt: credit ? now : null,
               carriedAppointmentFeePaymentId: credit?.id,
-              appointmentFeeAmount: row.bookingPolicyVersion.appointmentFeeAmount,
+              appointmentFeeAmount:
+                row.bookingPolicyVersion.appointmentFeeAmount,
               startAt: new Date(plan.startAt),
               endAt: new Date(plan.endAt),
-              holdExpiresAt: credit ? null : new Date(+now + row.bookingPolicyVersion.bookingHoldMinutes * 60_000),
+              holdExpiresAt: credit
+                ? null
+                : new Date(
+                    +now + row.bookingPolicyVersion.bookingHoldMinutes * 60_000,
+                  ),
             },
           });
           targetId = replacement.id;
@@ -377,7 +528,11 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
           });
           await tx.appointment.update({
             where: { id: row.id },
-            data: { startAt: new Date(plan.startAt), endAt: new Date(plan.endAt), rescheduleCount: { increment: 1 } },
+            data: {
+              startAt: new Date(plan.startAt),
+              endAt: new Date(plan.endAt),
+              rescheduleCount: { increment: 1 },
+            },
           });
         }
 
@@ -400,8 +555,13 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
             });
           } else {
             // Create fresh line item snapshotting current service catalog values
-            const item = prepared.data.services.find(s => s.id === part.serviceId)!;
-            const q = prepared.data.qualifications.find(q => q.staffId === part.staffId && q.serviceId === part.serviceId)!;
+            const item = prepared.data.services.find(
+              (s) => s.id === part.serviceId,
+            )!;
+            const q = prepared.data.qualifications.find(
+              (q) =>
+                q.staffId === part.staffId && q.serviceId === part.serviceId,
+            )!;
             await tx.appointmentService.create({
               data: {
                 ...timing,
@@ -417,8 +577,13 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
           }
         }
 
-        const updated = await tx.appointment.findUniqueOrThrow({ where: { id: targetId }, include });
-        const eventType = input.recovery ? "NO_SHOW_RECOVERY_CREATED" : "ORDINARY_RESCHEDULE";
+        const updated = await tx.appointment.findUniqueOrThrow({
+          where: { id: targetId },
+          include,
+        });
+        const eventType = input.recovery
+          ? "NO_SHOW_RECOVERY_CREATED"
+          : "ORDINARY_RESCHEDULE";
 
         // Record history and audit trail
         await tx.appointmentRescheduleHistory.create({
@@ -447,21 +612,42 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
         });
 
         // Queue notifications
-        await notify(tx, updated, input.recovery ? "NO_SHOW_RECOVERY_CREATED" : "BOOKING_RESCHEDULED", now);
+        await notify(
+          tx,
+          updated,
+          input.recovery ? "NO_SHOW_RECOVERY_CREATED" : "BOOKING_RESCHEDULED",
+          now,
+        );
         if (input.recovery && updated.status === "CONFIRMED") {
           await notify(tx, updated, "BOOKING_CONFIRMED", now);
         }
 
         // Concurrency double-check: ensure plan and deadlines remain valid
-        const view = await tx.appointment.findUniqueOrThrow({ where: { id: targetId }, select: guestSelect });
+        const view = await tx.appointment.findUniqueOrThrow({
+          where: { id: targetId },
+          select: guestSelect,
+        });
         const finalTime = await freshTime(tx);
         validateChangeEligibility(row, input.recovery, finalTime);
 
-        const finalPlan = planAt(prepared.selection, new Date(input.startAt), { ...prepared.planning, now: finalTime });
-        if (!finalPlan || (updated.status === "PENDING_PAYMENT" && updated.holdExpiresAt! < finalTime)) {
-          throw conflict("The booking deadline passed. Please choose another time.");
+        const finalPlan = planAt(prepared.selection, new Date(input.startAt), {
+          ...prepared.planning,
+          now: finalTime,
+        });
+        if (
+          !finalPlan ||
+          (updated.status === "PENDING_PAYMENT" &&
+            updated.holdExpiresAt! < finalTime)
+        ) {
+          throw conflict(
+            "The booking deadline passed. Please choose another time.",
+          );
         }
-        if (finalPlan.services.some((s, i) => s.staffId !== plan.services[i]!.staffId)) {
+        if (
+          finalPlan.services.some(
+            (s, i) => s.staffId !== plan.services[i]!.staffId,
+          )
+        ) {
           throw new RestartReservation();
         }
 
@@ -482,13 +668,20 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
      * - Updates status to `CANCELLED`, writes audit log, and enqueues cancellation notification.
      */
     async cancel(bookingCode: string, token: string, reason?: string) {
-      return reservationTransaction(prisma, async tx => {
+      return reservationTransaction(prisma, async (tx) => {
         const { row } = await lockAppointment(tx, bookingCode, token);
         if (row.status === "CANCELLED") return { cancelled: true };
 
         const check = (now: Date) => {
-          if (row.status !== "CONFIRMED" || +now > +row.startAt - row.bookingPolicyVersion.cancellationCutoffHours * 3_600_000) {
-            throw conflict("This appointment can no longer be cancelled. Please contact the salon.");
+          if (
+            row.status !== "CONFIRMED" ||
+            +now >
+              +row.startAt -
+                row.bookingPolicyVersion.cancellationCutoffHours * 3_600_000
+          ) {
+            throw conflict(
+              "This appointment can no longer be cancelled. Please contact the salon.",
+            );
           }
           pristine(row);
         };
@@ -531,14 +724,16 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
      * - Writes an administrative audit log entry.
      */
     async markNoShow(actorId: string, bookingCode: string) {
-      return reservationTransaction(prisma, async tx => {
+      return reservationTransaction(prisma, async (tx) => {
         await admin(tx, actorId);
         const { row } = await lockAppointment(tx, bookingCode);
         if (row.status === "NO_SHOW") return { marked: true };
 
         const now = await freshTime(tx);
         if (row.status !== "CONFIRMED" || now < row.startAt) {
-          throw conflict("Only a confirmed appointment whose start time has arrived may be marked as a no-show.");
+          throw conflict(
+            "Only a confirmed appointment whose start time has arrived may be marked as a no-show.",
+          );
         }
         pristine(row);
 
@@ -547,7 +742,10 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
           data: {
             status: "NO_SHOW",
             noShowAt: now,
-            noShowGraceExpiresAt: new Date(+row.startAt + row.bookingPolicyVersion.noShowGraceHours * 3_600_000),
+            noShowGraceExpiresAt: new Date(
+              +row.startAt +
+                row.bookingPolicyVersion.noShowGraceHours * 3_600_000,
+            ),
           },
         });
 
@@ -581,37 +779,99 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
      *
      * @returns Array of 50 sanitized appointment views and an optional `nextCursor` for the next page.
      */
-    async list(actorId: string, cursor?: string, filters: AppointmentListQuery = {}) {
-      return prisma.$transaction(async tx => {
+    async list(
+      actorId: string,
+      cursor?: string,
+      filters: AppointmentListQuery = {},
+    ) {
+      return prisma.$transaction(async (tx) => {
         await admin(tx, actorId);
         const now = await freshTime(tx);
 
         const where: Prisma.AppointmentWhereInput = {
           ...(filters.status ? { status: filters.status } : {}),
-          ...(filters.from || filters.to ? {
-            startAt: {
-              ...(filters.from ? { gte: new Date(Temporal.PlainDate.from(filters.from).toZonedDateTime(timeZone).epochMilliseconds) } : {}),
-              ...(filters.to ? { lt: new Date(Temporal.PlainDate.from(filters.to).add({ days: 1 }).toZonedDateTime(timeZone).epochMilliseconds) } : {}),
-            },
-          } : {}),
-          ...(filters.staffId ? { appointmentServices: { some: { staffId: filters.staffId, membershipStatus: "ACTIVE" } } } : {}),
-          ...(filters.search ? {
-            OR: [
-              { bookingCode: { contains: filters.search, mode: "insensitive" } },
-              { customer: { firstName: { contains: filters.search, mode: "insensitive" } } },
-              { customer: { lastName: { contains: filters.search, mode: "insensitive" } } },
-              {
-                customer: {
-                  AND: filters.search.split(/\s+/).map(word => ({
-                    OR: [
-                      { firstName: { contains: word, mode: "insensitive" as const } },
-                      { lastName: { contains: word, mode: "insensitive" as const } },
-                    ],
-                  })),
+          ...(filters.from || filters.to
+            ? {
+                startAt: {
+                  ...(filters.from
+                    ? {
+                        gte: new Date(
+                          Temporal.PlainDate.from(filters.from).toZonedDateTime(
+                            timeZone,
+                          ).epochMilliseconds,
+                        ),
+                      }
+                    : {}),
+                  ...(filters.to
+                    ? {
+                        lt: new Date(
+                          Temporal.PlainDate.from(filters.to)
+                            .add({ days: 1 })
+                            .toZonedDateTime(timeZone).epochMilliseconds,
+                        ),
+                      }
+                    : {}),
                 },
-              },
-            ],
-          } : {}),
+              }
+            : {}),
+          ...(filters.staffId
+            ? {
+                appointmentServices: {
+                  some: {
+                    staffId: filters.staffId,
+                    membershipStatus: "ACTIVE",
+                  },
+                },
+              }
+            : {}),
+          ...(filters.search
+            ? {
+                OR: [
+                  {
+                    bookingCode: {
+                      contains: filters.search,
+                      mode: "insensitive",
+                    },
+                  },
+                  {
+                    customer: {
+                      firstName: {
+                        contains: filters.search,
+                        mode: "insensitive",
+                      },
+                    },
+                  },
+                  {
+                    customer: {
+                      lastName: {
+                        contains: filters.search,
+                        mode: "insensitive",
+                      },
+                    },
+                  },
+                  {
+                    customer: {
+                      AND: filters.search.split(/\s+/).map((word) => ({
+                        OR: [
+                          {
+                            firstName: {
+                              contains: word,
+                              mode: "insensitive" as const,
+                            },
+                          },
+                          {
+                            lastName: {
+                              contains: word,
+                              mode: "insensitive" as const,
+                            },
+                          },
+                        ],
+                      })),
+                    },
+                  },
+                ],
+              }
+            : {}),
         };
 
         if (filters.attention === "pending-fees") {
@@ -632,7 +892,9 @@ export function createAppointmentChangesService(prisma: PrismaClient, timeZone: 
         });
 
         return {
-          appointments: rows.slice(0, 50).map(row => guestView(row, now, timeZone)),
+          appointments: rows
+            .slice(0, 50)
+            .map((row) => guestView(row, now, timeZone)),
           nextCursor: rows.length > 50 ? rows[49]!.id : null,
         };
       });

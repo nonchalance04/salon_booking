@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client.js";
 import { ApiError } from "../../shared/http.js";
@@ -6,7 +7,9 @@ import { smsRecipient, type NotificationProvider } from "../notifications/notifi
 
 export const OTP_TTL_MS = 5 * 60_000;
 export const GUEST_SESSION_MS = 2 * 60 * 60_000;
-export const OTP_NOTICE = "If the booking details match, a verification code will arrive by SMS. It expires in 5 minutes.";
+export type OtpChannel = "SMS" | "EMAIL";
+export const OTP_NOTICE = "If the booking details match, a verification code will arrive by your selected method. It expires in 5 minutes.";
+function email(value: string) { const normalized = value.trim().toLowerCase(); return z.email().safeParse(normalized).success ? normalized : null; }
 const invalid = () => new ApiError(400, "INVALID_OTP", "The code is incorrect or expired. Request a new code if needed.");
 const limited = () => new ApiError(429, "OTP_LIMIT", "Please wait before requesting or checking another code.");
 export function otpDigest(secret: string, purpose: string, value: string) {
@@ -27,24 +30,26 @@ async function rate(tx: Prisma.TransactionClient, key: string, limit: number, no
     RETURNING count`;
   return rows[0]!.count <= limit;
 }
-export function createAppointmentOtpService(prisma: PrismaClient, secret: string, provider?: NotificationProvider) {
+export function createAppointmentOtpService(prisma: PrismaClient, secret: string, provider?: NotificationProvider, emailProvider?: NotificationProvider) {
   return {
-    async request(bookingCode: string, rawPhone: string, ip: string) {
-      if (!provider) throw new ApiError(503, "OTP_DISABLED", "SMS verification is unavailable. Try again later or contact the salon.");
-      const normalized = phone(rawPhone);
-      const identityKey = otpDigest(secret, "identity", `${bookingCode}:${normalized ?? rawPhone}`);
+    async request(bookingCode: string, contact: string, ip: string, channel: OtpChannel = "SMS") {
+      const sender = channel === "EMAIL" ? emailProvider : provider;
+      if (!sender) throw new ApiError(503, "OTP_DISABLED", "This verification method is unavailable. Choose another method or contact the salon.");
+      const normalized = channel === "EMAIL" ? email(contact) : phone(contact);
+      const identityKey = otpDigest(secret, "identity", bookingCode);
       const id = randomUUID(), code = String(randomInt(0, 1_000_000)).padStart(6, "0");
       const result = await prisma.$transaction(async tx => {
         const now = new Date();
         // Fixed order prevents deadlocks. Unknown bookings consume the same limits.
         const allowedIp = await rate(tx, otpDigest(secret, "request-ip", ip), 10, now);
-        const allowedPhone = await rate(tx, otpDigest(secret, "request-phone", normalized ?? rawPhone), 3, now);
+        const allowedContact = await rate(tx, otpDigest(secret, channel === "EMAIL" ? "request-email" : "request-phone", normalized ?? contact), 3, now);
         const allowedBooking = await rate(tx, otpDigest(secret, "request-booking", bookingCode), 3, now);
-        if (!allowedIp || !allowedPhone || !allowedBooking) return { limited: true } as const;
+        if (!allowedIp || !allowedContact || !allowedBooking) return { limited: true } as const;
         const recent = await tx.appointmentOtpChallenge.findFirst({ where: { identityKey, createdAt: { gt: new Date(+now - 60_000) } } });
         if (recent) return { limited: true } as const;
         const appointment = await tx.appointment.findUnique({ where: { bookingCode }, include: { customer: true } });
-        const matches = normalized && appointment && phone(appointment.customer.phone) === normalized;
+        const recorded = appointment ? (channel === "EMAIL" ? email(appointment.customer.email ?? "") : phone(appointment.customer.phone)) : null;
+        const matches = normalized && appointment && recorded === normalized;
         await tx.appointmentOtpChallenge.updateMany({ where: { identityKey, consumedAt: null }, data: { consumedAt: now } });
         await tx.appointmentOtpChallenge.create({ data: { id, identityKey, appointmentId: matches ? appointment.id : null,
           codeHash: otpDigest(secret, id, code), expiresAt: new Date(+now + OTP_TTL_MS) } });
@@ -53,18 +58,18 @@ export function createAppointmentOtpService(prisma: PrismaClient, secret: string
       if ("limited" in result) throw limited();
       if (result.recipient) {
         try {
-          await provider.send({ id, channel: "SMS", recipient: result.recipient, subject: "Appointment verification",
+          await sender.send({ id, channel, recipient: result.recipient, subject: "Appointment verification",
             text: `Your salon appointment access code is ${code}. It expires in 5 minutes. Do not share this code.` }, AbortSignal.timeout(10_000));
         } catch {
           await prisma.appointmentOtpChallenge.update({ where: { id }, data: { consumedAt: new Date() } });
           console.error(JSON.stringify({ event: "appointment_otp_send_failed", challengeId: id }));
         }
       }
-      // Do not expose whether the booking/phone exists or the gateway accepted it.
+      // Do not expose whether the booking/contact exists or delivery was accepted.
       return { challengeId: id, message: OTP_NOTICE, retryAfterSeconds: 60 };
     },
     async verify(id: string, code: string, ip: string) {
-      if (!provider) throw new ApiError(503, "OTP_DISABLED", "SMS verification is unavailable.");
+      if (!provider && !emailProvider) throw new ApiError(503, "OTP_DISABLED", "Appointment verification is unavailable.");
       const result = await prisma.$transaction(async tx => {
         const now = new Date();
         if (!await rate(tx, otpDigest(secret, "verify-ip", ip), 30, now)) return { limited: true } as const;

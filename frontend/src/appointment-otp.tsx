@@ -6,7 +6,9 @@ import type { Appointment } from "./booking";
 
 export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appointment) => void }) {
   const verified = useRef(onVerified); verified.current = onVerified;
-  const [available, setAvailable] = useState(false);
+  const [channels, setChannels] = useState<Array<"SMS" | "EMAIL">>([]);
+  const [channel, setChannel] = useState<"SMS" | "EMAIL">("SMS");
+  const [email, setEmail] = useState("");
   const [bookingCode, setBookingCode] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -18,17 +20,18 @@ export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appoi
   const sending = useRef(false);
   useEffect(() => {
     let active = true;
-    void api<{ available: boolean }>("/appointments/otp/options").then(async options => {
+    void api<{ available: boolean; channels: Array<"SMS" | "EMAIL"> }>("/appointments/otp/options").then(async options => {
       if (!active) return;
-      setAvailable(options.available);
-      if (!options.available) { setError("SMS verification is unavailable. Try again later or contact the salon."); return; }
+      setChannels(options.channels);
+      if (options.channels.length) setChannel(options.channels[0]!);
+      else setError("Appointment verification is unavailable. Try again later or contact the salon.");
       try {
         const result = await api<{ appointment: Appointment }>("/appointments/otp/session");
         if (active) verified.current(result.appointment);
       } catch (err) {
         if (active && !(err instanceof ApiError && err.status === 401)) setError("Could not restore your visit. You can request a new code below.");
       }
-    }).catch(() => { if (active) setError("SMS verification is unavailable. Try again later or contact the salon."); });
+    }).catch(() => { if (active) setError("Appointment verification is unavailable. Try again later or contact the salon."); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -41,7 +44,7 @@ export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appoi
     sending.current = true; setBusy(true); setError("");
     try {
       const result = await api<{ challengeId: string; message: string; retryAfterSeconds: number }>("/appointments/otp/request", {
-        method: "POST", body: JSON.stringify({ bookingCode: bookingCode.trim().toUpperCase(), phone: philippinePhoneNumber(phone) }),
+        method: "POST", body: JSON.stringify({ bookingCode: bookingCode.trim().toUpperCase(), channel, ...(channel === "EMAIL" ? { email: email.trim() } : { phone: philippinePhoneNumber(phone) }) }),
       });
       setChallengeId(result.challengeId); setCode(""); setNotice(result.message); setCooldown(result.retryAfterSeconds);
     } catch (err) { setError(err instanceof Error ? err.message : "Please try again."); }
@@ -59,20 +62,27 @@ export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appoi
     } catch (err) { setError(err instanceof Error ? err.message : "Please try again."); }
     finally { sending.current = false; setBusy(false); }
   }
-  return <section className="account-form" aria-label="Verify appointment by SMS">
-    {available && <><h3>Find your appointment</h3>
-      <p>Enter your booking code and the phone number you used when booking. We’ll send you a verification code.</p>
+  return <section className="account-form" aria-label="Verify appointment">
+    {channels.length > 0 && <><h3>Find your appointment</h3>
+      <p>Enter your booking code and choose how to receive your verification code. Use the email address or phone number you provided when booking.</p>
       <form onSubmit={requestCode}><fieldset disabled={busy || Boolean(challengeId)}>
         <label>Booking code<input required value={bookingCode} onChange={e => setBookingCode(e.target.value)} autoCapitalize="characters" maxLength={100} /></label>
-        <label>Phone number<PhoneInput value={phone} onChange={setPhone} /></label>
-        {!challengeId && <button className="primary" disabled={busy || cooldown > 0}>{busy ? "Requesting code…" : cooldown ? `Wait ${cooldown}s` : "Send verification code"}</button>}
+        <label>Verification method<select value={channel} onChange={e => setChannel(e.target.value as "SMS" | "EMAIL")}>
+          {channels.includes("SMS") && <option value="SMS">SMS</option>}
+          {channels.includes("EMAIL") && <option value="EMAIL">Email</option>}
+        </select></label>
+        {channel === "EMAIL"
+          ? <label>Email address<input type="email" required autoComplete="email" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></label>
+          : <label>Phone number<PhoneInput value={phone} onChange={setPhone} /></label>}
+        <p className="muted">{channel === "EMAIL" ? "Email verification requires an email address saved on your booking. Check your inbox and spam folder for the code." : "We’ll send the code by SMS to the phone number saved on your booking."}</p>
+        {!challengeId && <button className="primary" disabled={busy || cooldown > 0}>{busy ? "Requesting code…" : cooldown ? `Wait ${cooldown}s` : `Send code by ${channel === "EMAIL" ? "email" : "SMS"}`}</button>}
       </fieldset></form>
       {notice && <p role="status">{notice}</p>}
       {challengeId && <form onSubmit={verify}>
         <label>Verification code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} /></label>
         <button className="primary" disabled={busy}>{busy ? "Please wait…" : "Verify and view appointment"}</button>
         <button type="button" disabled={busy || cooldown > 0} onClick={() => void requestCode()}>{cooldown ? `Resend in ${cooldown}s` : "Resend code"}</button>
-        <button type="button" disabled={busy} onClick={() => { setChallengeId(""); setNotice(""); setCode(""); setError(""); }}>Change booking details</button>
+        <button type="button" disabled={busy} onClick={() => { setChallengeId(""); setNotice(""); setCode(""); setError(""); }}>Change booking details or method</button>
         <p className="muted">Your appointment stays accessible on this browser for two hours. Use “Close appointment” when finished on a shared device.</p>
       </form>}
     </>}

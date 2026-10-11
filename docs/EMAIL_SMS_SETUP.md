@@ -1,9 +1,9 @@
 # Email and SMS notification setup: step-by-step guide
 
-Checked against this repository and official provider documentation on October 8,
-2026. This system uses **Resend for email** and **PhilSMS for SMS**.
+Checked against this repository and official provider documentation on October 11,
+2026. This system uses **Gmail SMTP for email** and **PhilSMS for SMS**.
 Both integrations already exist. Configure the backend and run the notification
-worker; no provider SDK, frontend secret, or new database model is needed.
+worker; Nodemailer is installed with the backend dependencies; credentials stay on the backend.
 
 Use Steps 1–4 for local simulation, Steps 5–8 for real delivery, and Step 11 for
 production operation. Existing detailed failure/recovery tests remain in the
@@ -15,7 +15,7 @@ production operation. Existing detailed failure/recovery tests remain in the
 Booking/payment/change transaction
     -> NotificationQueue in PostgreSQL
     -> separate notification worker
-    -> Resend email OR PhilSMS SMS
+    -> Gmail email OR PhilSMS SMS
     -> customer's inbox or phone
 ```
 
@@ -43,7 +43,7 @@ Creating an unpaid hold does not create a confirmation notification.
 | --- | --- |
 | `disabled` | The worker does not claim that channel's queued messages |
 | `test` | Simulates acceptance and marks the row SENT; sends nothing externally |
-| `resend` / `philsms` | Calls the corresponding provider and can send real messages |
+| `gmail` / `philsms` | Calls the corresponding provider and can send real messages |
 
 For real providers, `SENT` means the provider accepted the request. It does not
 prove inbox/handset delivery. There is currently no notification management screen,
@@ -71,7 +71,7 @@ if existing recipients are unsuitable; do not blindly delete or reset queue hist
 For a new checkout, run from `backend/`:
 
 ```bash
-cd /home/nonchalance/salon_project/backend
+cd /home/nonchalance/salonUI/salon_booking_vibecode/backend
 npm run db:validate
 npm run db:generate
 npm run db:migrate
@@ -97,7 +97,7 @@ NOTIFICATION_MAX_ATTEMPTS=5
 NOTIFICATION_RETRY_BASE_MS=60000
 ```
 
-Keep reminders off initially so confirmation events are easy to count. Resend and
+Keep reminders off initially so confirmation events are easy to count. Gmail and
 PhilSMS credentials are not needed in test mode. Leave unused provider fields blank
 if stale invalid values cause environment validation errors.
 
@@ -106,14 +106,14 @@ Start these in separate terminals, using Node 24 in each:
 **Terminal A — API**
 
 ```bash
-cd /home/nonchalance/salon_project/backend
+cd /home/nonchalance/salonUI/salon_booking_vibecode/backend
 npm run dev
 ```
 
 **Terminal B — hold worker**
 
 ```bash
-cd /home/nonchalance/salon_project/backend
+cd /home/nonchalance/salonUI/salon_booking_vibecode/backend
 npm run worker:holds
 ```
 
@@ -166,7 +166,7 @@ Leave the notification worker stopped until Step 4. Open
 8. Start **Terminal D — notification worker**:
 
    ```bash
-   cd /home/nonchalance/salon_project/backend
+   cd /home/nonchalance/salonUI/salon_booking_vibecode/backend
    npm run worker:notifications
    ```
 
@@ -180,73 +180,71 @@ Leave the notification worker stopped until Step 4. Open
 Test-mode SENT rows are finished; changing providers does not resend them. Use new
 bookings for real delivery checks rather than resetting those rows.
 
-## 5. Set up Resend email
+## 5. Set up Gmail email
 
-### 5.1 Create the account and verify your sender domain
+### 5.1 Prepare the sending account
 
-1. Sign into or create an account at [Resend](https://resend.com/).
-2. Open **Domains**, choose **Add Domain**, and enter a domain you control. A sending
-   subdomain such as `notifications.your-salon-domain.com` can separate notification
-   mail from your main domain.
-3. In your DNS host, add the exact verification/sending records Resend displays.
-   Copy record names, types, values, and priorities as shown; avoid guessing them.
-4. Keep existing website and mailbox records intact. Follow your DNS host's naming
-   convention so it does not append the domain twice.
-5. Return to Resend and verify until the domain is shown as verified. DNS changes
-   may take time. See [Resend domain setup](https://resend.com/docs/dashboard/domains/manage-domains).
-6. Choose a sender on that verified domain, for example
-   `appointments@notifications.your-salon-domain.com`. Resend allows sender addresses
-   on a verified domain; this does not create a receiving mailbox.
-   [Verified domains](https://resend.com/docs/dashboard/domains/introduction).
+1. Use a Gmail or Google Workspace mailbox owned by the salon.
+2. Enable **2-Step Verification** in the Google account's Security settings.
+3. Open [Google App Passwords](https://myaccount.google.com/apppasswords), create
+   one named **Salon Booking**, and save the generated 16-letter password locally.
+   Do not use the ordinary Google account password or share the App Password in chat.
+4. If App Passwords are unavailable, check account/admin restrictions. This adapter
+   requires an App Password; OAuth is not implemented. See
+   [Google's App Password instructions](https://support.google.com/accounts/answer/185833).
 
-For an initial test without a domain, Resend's `onboarding@resend.dev` sender is
-limited to the email associated with your Resend account. It is not a customer
-sender. [Resend test-domain restriction](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
+No custom domain is needed for a sender such as `your-salon@gmail.com`. Gmail SMTP
+uses `smtp.gmail.com:465` with verified TLS. Your deployment host must allow this
+outbound connection. Google may reject server sign-ins or limit sending; see
+[Nodemailer's Gmail guide](https://nodemailer.com/guides/using-gmail).
 
-### 5.2 Create an API key
+### 5.2 Replace the previous email configuration
 
-1. Open **API Keys** in Resend and create a key named for this application/environment.
-2. Give it sending permission and, where configured, restrict it to the sender
-   domain. Store the generated value securely when displayed.
-3. Do not put the key in React/Vite. The backend worker calls Resend directly.
-   [Resend API key management](https://resend.com/docs/dashboard/api-keys/introduction).
-
-### 5.3 Configure and test real email
-
-Stop Terminal D. Review pending recipients privately before enabling delivery:
+Stop the notification worker before editing `backend/.env`. Review pending
+recipients before enabling delivery, since existing queued email will use Gmail:
 
 ```sql
 SELECT id, channel, status, recipient, "eventType", "scheduledAt", "attemptCount"
 FROM "NotificationQueue"
-WHERE status IN ('PENDING', 'PROCESSING')
+WHERE channel = 'EMAIL' AND status IN ('PENDING', 'PROCESSING')
 ORDER BY "scheduledAt";
 ```
 
-This query includes contact data; do not share its output. Then edit `backend/.env`:
+Then update the existing entries (do not create duplicates):
 
 ```dotenv
-NOTIFICATION_EMAIL_PROVIDER=resend
-RESEND_API_KEY=YOUR_ACTUAL_RESEND_API_KEY
-NOTIFICATION_EMAIL_FROM=appointments@notifications.your-salon-domain.com
-NOTIFICATION_SMS_PROVIDER=disabled
-NOTIFICATION_REMINDER_HOURS=0
+NOTIFICATION_EMAIL_PROVIDER=gmail
+GMAIL_USER=your-salon@gmail.com
+GMAIL_APP_PASSWORD=YOUR_16_LETTER_APP_PASSWORD
+NOTIFICATION_EMAIL_FROM=your-salon@gmail.com
 ```
 
-Replace both placeholders. This application's sender validator accepts a **bare
-email address**, not `Salon Name <address@example.com>`.
+Replace every placeholder. The FROM address must equal GMAIL_USER; use a bare
+email address. Spaces in Google's displayed App Password are automatically removed.
+Remove the old RESEND_API_KEY setting; `resend` is no longer an accepted provider.
+Keep database, payment, SMS and origin settings as configured. For an isolated
+email test, optionally set `NOTIFICATION_REMINDER_HOURS=0` to avoid reminder mail.
+Keep credentials out of Git, frontend code, `.env.example`, and reports.
 
-1. Restart the API, hold worker, and notification worker so all processes use the
-   same valid environment. Live email can be tested with `NODE_ENV=development`.
-2. Create and confirm a **new** booking using your own receiving email address.
-3. Inspect its rows using Step 4's query. Expect two EMAIL rows to become SENT.
-4. Inspect Resend's email/log dashboard for the matching recipient, subject, and
-   time. Check for rejection, bounce, or delivery information.
-5. Open the recipient inbox and spam folder. Verify the booking code and the
-   confirmation's appointment date/time with the Asia/Manila label.
+### 5.3 Restart and verify booking email
 
-**Pass:** both expected messages actually arrive and match the booking. Queue SENT
-alone is insufficient. The current templates send plain text; they do not attach
-receipts or include private guest access tokens/links.
+1. Run `npm ci` from `backend/` to install the current dependencies.
+2. Restart the API and existing workers so they load the updated environment.
+3. In a separate terminal, from `backend/`, run `npm run worker:notifications`.
+   For production, build with `npm run build` and supervise `npm run start:notifications`.
+4. Create a **new** booking using an inbox you control and complete payment/cashier
+   confirmation. An unpaid hold does not send a booking confirmation.
+5. Expect payment-received and booking-confirmed EMAIL rows to become SENT.
+6. Check Gmail's Sent folder and the recipient inbox/spam folder. Verify the booking
+   code, appointment date/time, and Asia/Manila label. SENT means SMTP acceptance,
+   not proven inbox delivery. Inspect later bounce mail in the sender's mailbox.
+
+**Pass:** the expected messages arrive and match the booking. Test-mode SENT rows
+will not be sent again. Use a new booking after correcting configuration.
+
+Personal Gmail accounts may block sending after more than 500 emails per day;
+multiple messages and reminders count separately. Workspace limits differ. See
+[Google's sending limits](https://support.google.com/mail/answer/22839).
 
 ## 6. Set up PhilSMS for Philippine recipients
 
@@ -293,9 +291,10 @@ After each channel passes independently, use this combined backend configuration
 
 ```dotenv
 SALON_TIMEZONE=Asia/Manila
-NOTIFICATION_EMAIL_PROVIDER=resend
-RESEND_API_KEY=YOUR_ACTUAL_RESEND_API_KEY
-NOTIFICATION_EMAIL_FROM=appointments@notifications.your-salon-domain.com
+NOTIFICATION_EMAIL_PROVIDER=gmail
+GMAIL_USER=your-salon@gmail.com
+GMAIL_APP_PASSWORD=YOUR_16_LETTER_APP_PASSWORD
+NOTIFICATION_EMAIL_FROM=your-salon@gmail.com
 NOTIFICATION_SMS_PROVIDER=philsms
 PHILSMS_API_TOKEN=YOUR_PRIVATE_API_TOKEN
 PHILSMS_SENDER_ID=YourSalon
@@ -365,9 +364,9 @@ ORDER BY "scheduledAt"
 LIMIT 100;
 ```
 
-Resend requests use the queue ID as an idempotency key. The PhilSMS adapter does
-not assume an idempotency guarantee; a crash after provider acceptance can cause
-a resend. Inspect provider history before retrying uncertain deliveries. There is
+Gmail messages have a stable Message-ID derived from the queue ID, but SMTP does
+not guarantee deduplication. Neither Gmail nor PhilSMS has an assumed idempotency
+guarantee: a timeout or crash after acceptance can cause a duplicate on retry. Inspect provider history before retrying uncertain deliveries. There is
 no implemented Admin retry button: investigate terminal failures and use a fresh
 controlled booking for setup retests rather than bulk-resetting rows.
 
@@ -380,29 +379,29 @@ controlled booking for setup retests rather than bulk-resetting rows.
 | SENT but no actual message | Confirm provider is not `test`; inspect provider dashboard and inbox/handset. SENT only means acceptance. |
 | SMS never attempted | Check whether the booking has an email; the routing rule selects email first. |
 | Invalid environment configuration | Correct the named variables, bare sender email, approved sender ID, and secret values; restart processes. |
-| Resend 401/403 | Check API key, domain restrictions, verified sender domain, and resend.dev recipient restrictions. |
-| Email accepted but missing | Check provider bounce/suppression/delivery details and recipient spam filters. |
+| `GMAIL_AUTH_FAILED` / `GMAIL_SMTP_535` | Check the mailbox, 2-Step Verification, and App Password; generate a new App Password if the Google password changed. |
+| `GMAIL_SMTP_4xx` / `GMAIL_SMTP_5xx` | Temporary 4xx responses retry; permanent 5xx responses stop. Check account limits, recipient validity, and sender bounce mail. |
+| Email accepted but missing | Check Gmail Sent, sender bounce mail, and recipient spam filters. |
 | PhilSMS 400/401/403 | Inspect PhilSMS Console details: API token, approved sender, credits, recipient, and account status. |
 | PhilSMS accepted but phone receives nothing | Inspect subsequent carrier delivery/error status and Philippine sender registration. |
 | `INVALID_RECIPIENT` | Correct email/phone format; dummy numbers are unsuitable for real delivery. |
 | `PROVIDER_HTTP_429` or 5xx | Review provider limits/health; allow scheduled retries and inspect attempt count. |
-| `PROVIDER_TIMEOUT` / `PROVIDER_UNAVAILABLE` | Check outbound HTTPS, DNS, credentials, and provider logs; inspect acceptance before retrying. |
+| `PROVIDER_TIMEOUT` / `PROVIDER_UNAVAILABLE` | Check outbound SMTP port 465 for Gmail, HTTPS for SMS, DNS, credentials, and provider evidence; inspect acceptance before retrying. |
 | `INVALID_PROVIDER_RESPONSE` / `PROVIDER_REJECTED` | Review provider evidence and adapter expectations; do not label delivery successful. |
 | `REMINDER_OBSOLETE` | Expected when a queued reminder no longer matches an eligible current schedule. |
 | `ATTEMPTS_EXHAUSTED` or FAILED | Investigate cause/provider history; changing configuration alone does not requeue terminal rows. |
 | `notification_worker_failed` | Inspect database connectivity, migrations, and process environment. |
 | `notification_reminder_scan_failed` | Check database/scanner configuration; delivery of existing queued messages may still continue. |
 
-Unlike PayMongo callbacks, this implementation needs outbound HTTPS access to
-`api.resend.com` and `dashboard.philsms.com`, not a public local webhook URL. Do not add
-SMTP settings or a Gmail app password: this adapter uses Resend's HTTP API.
+Email needs outbound TLS SMTP access to `smtp.gmail.com:465`. PhilSMS needs HTTPS
+access to `dashboard.philsms.com`. No public notification webhook is required.
 
 ## 11. Run checks and operate in production
 
 Run these checks from the initialized checkout:
 
 ```bash
-cd /home/nonchalance/salon_project/backend
+cd /home/nonchalance/salonUI/salon_booking_vibecode/backend
 npm run check
 node --import tsx --test tests/notifications.test.ts
 ```
@@ -472,3 +471,37 @@ Use PASS, FAIL, BLOCKED, or NOT RUN. Record provider approval delays as BLOCKED,
 not successful delivery. Track unresolved live acceptance in
 [Acceptance backlog](ACCEPTANCE_BACKLOG.md). This setup guide does not change
 notification routing, templates, or business rules.
+
+
+## 12. Let customers verify appointment access by email or SMS
+
+The Your Appointment page lets customers select an enabled verification method.
+To enable Gmail verification, set these backend variables and restart the API:
+
+```dotenv
+APPOINTMENT_EMAIL_OTP_PROVIDER=gmail
+GMAIL_USER=your-salon@gmail.com
+GMAIL_APP_PASSWORD=YOUR_16_LETTER_APP_PASSWORD
+NOTIFICATION_EMAIL_FROM=your-salon@gmail.com
+APPOINTMENT_OTP_SECRET=YOUR_SEPARATE_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
+```
+
+Email OTP is independent of `NOTIFICATION_EMAIL_PROVIDER`; the API sends codes
+directly through Gmail without waiting for the notification worker. Keep the
+existing secret if one is configured. For SMS, set `APPOINTMENT_OTP_PROVIDER=textbee`
+and valid `TEXTBEE_API_KEY` / `TEXTBEE_DEVICE_ID` as described in TEXTBEE_SETUP.md.
+Both methods are offered when both are enabled; unavailable methods are omitted.
+Routine SMS provider selection does not enable SMS OTP.
+
+Customers enter the booking code and the email or phone number recorded at booking.
+Email matching ignores letter case. A missing/wrong email or unknown booking gives
+the same neutral response without sending a code. Codes expire in five minutes,
+allow five guesses and are single-use. Switching methods shares the 60-second
+booking cooldown and three-request booking budget per 15 minutes, and a newly
+issued code invalidates the previous one across methods. IP/contact limits also
+apply. Successful verification uses the same two-hour HttpOnly appointment session.
+
+Test email-only, SMS-only and both-enabled configurations. Test incorrect contacts,
+expired/reused codes, switching methods and browser refresh/logout. Automated tests
+use fake providers and a disposable database; live Gmail delivery still needs a
+controlled inbox test.

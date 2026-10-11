@@ -131,7 +131,7 @@ export function GuestAppointment({ embedded = false }: { embedded?: boolean } = 
   const [busy, setBusy] = useState(false);
   const requestGeneration = useRef(0);
   useEffect(() => {
-    const expired = () => { requestGeneration.current++; setResult(null); setToken(""); setCredentials({ bookingCode: "", token: "" }); setError("Your session expired. Verify your phone number again."); };
+    const expired = () => { requestGeneration.current++; setResult(null); setToken(""); setCredentials({ bookingCode: "", token: "" }); setError("Your session expired. Verify your email or phone number again."); };
     window.addEventListener("guest-session-expired", expired);
     return () => window.removeEventListener("guest-session-expired", expired);
   }, []);
@@ -163,7 +163,7 @@ export function GuestAppointment({ embedded = false }: { embedded?: boolean } = 
       </> : <>
         {(!credentials.token || Boolean(error)) && <AppointmentOtp onVerified={appointment => { requestGeneration.current++; setToken(""); setResult(appointment); setError(""); }} />}
         {busy && <p role="status">Loading your appointment…</p>}
-        <p className="muted">If you just returned from PayMongo, return to your original booking tab or verify your phone number above. Your payment will be verified automatically.</p>
+        <p className="muted">If you just returned from PayMongo, return to your original booking tab or verify your email or phone number above. Your payment will be verified automatically.</p>
       </>}{error && <p role="alert" className="error">{error}</p>}
     </section></div>;
 }

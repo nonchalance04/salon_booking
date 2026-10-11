@@ -105,7 +105,7 @@ signed events, capture identity/amount, duplicate delivery, expiration, late cap
 and reconciliation using approved merchant procedures. Never record a provider
 capture again as a manual collection. See the README for webhook endpoint details.
 
-For Resend/PhilSMS, complete account/domain/sender setup, observe delivery and failure
+For Gmail/PhilSMS, complete account/App Password/sender setup, observe delivery and failure
 handling with salon-authorized recipients, and approve wording/timezone/reminder
 settings. Provider acceptance is not proof of inbox/handset delivery. Record evidence
 in ACCEPTANCE_BACKLOG A04/A09. No messages or real money are sent by local acceptance.

@@ -1,7 +1,18 @@
-import { bookingLinkToken, confirmationSms, suppressRoutineSms } from "./minimal-sms.js";
+import {
+  bookingLinkToken,
+  confirmationSms,
+  suppressRoutineSms,
+} from "./minimal-sms.js";
 import { tokenHash } from "../appointments/appointments.security.js";
-import { Prisma, type PrismaClient, type NotificationQueue } from "../../../generated/prisma/client.js";
-import { NotificationFailure, type NotificationProvider } from "./notification-provider.js";
+import {
+  Prisma,
+  type PrismaClient,
+  type NotificationQueue,
+} from "../../../generated/prisma/client.js";
+import {
+  NotificationFailure,
+  type NotificationProvider,
+} from "./notification-provider.js";
 import { notificationPayload, renderNotification } from "./templates.js";
 
 export type NotificationOptions = {
@@ -17,15 +28,37 @@ export type NotificationOptions = {
   bookingLinkSecret?: string;
 };
 
-export function createNotificationsService(db: PrismaClient, options: NotificationOptions) {
-  if (!Number.isInteger(options.maxAttempts) || options.maxAttempts < 1 || options.maxAttempts > 20 ||
-      !Number.isFinite(options.timeoutMs) || options.timeoutMs < 1 || !Number.isFinite(options.leaseMs) || options.leaseMs <= options.timeoutMs ||
-      !Number.isFinite(options.retryBaseMs) || options.retryBaseMs < 1 || !Number.isFinite(options.reminderHours) || options.reminderHours < 0) throw new Error("Invalid notification worker options.");
+export function createNotificationsService(
+  db: PrismaClient,
+  options: NotificationOptions,
+) {
+  if (
+    !Number.isInteger(options.maxAttempts) ||
+    options.maxAttempts < 1 ||
+    options.maxAttempts > 20 ||
+    !Number.isFinite(options.timeoutMs) ||
+    options.timeoutMs < 1 ||
+    !Number.isFinite(options.leaseMs) ||
+    options.leaseMs <= options.timeoutMs ||
+    !Number.isFinite(options.retryBaseMs) ||
+    options.retryBaseMs < 1 ||
+    !Number.isFinite(options.reminderHours) ||
+    options.reminderHours < 0
+  )
+    throw new Error("Invalid notification worker options.");
   const minimalSms = options.smsPolicy !== "all";
-  if (minimalSms && options.providers.SMS && (!options.publicSiteUrl || !options.bookingLinkSecret)) {
-    throw new Error("Minimal SMS requires PUBLIC_SITE_URL and a booking-link secret before starting the worker.");
+  if (
+    minimalSms &&
+    options.providers.SMS &&
+    (!options.publicSiteUrl || !options.bookingLinkSecret)
+  ) {
+    throw new Error(
+      "Minimal SMS requires PUBLIC_SITE_URL and a booking-link secret before starting the worker.",
+    );
   }
-  const channels = Object.keys(options.providers).filter(channel => options.providers[channel as "EMAIL" | "SMS"]);
+  const channels = Object.keys(options.providers).filter(
+    (channel) => options.providers[channel as "EMAIL" | "SMS"],
+  );
 
   async function claim() {
     if (!channels.length) return null;
@@ -50,9 +83,15 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
 
   async function fail(row: NotificationQueue, error: unknown) {
     const known = error instanceof NotificationFailure;
-    const retry = !(minimalSms && row.channel === "SMS") && (!known || error.retryable) && row.attemptCount < options.maxAttempts;
+    const retry =
+      !(minimalSms && row.channel === "SMS") &&
+      (!known || error.retryable) &&
+      row.attemptCount < options.maxAttempts;
     const code = known ? error.code : "PROVIDER_UNAVAILABLE";
-    const delay = Math.min(options.retryBaseMs * 2 ** (row.attemptCount - 1), 3_600_000);
+    const delay = Math.min(
+      options.retryBaseMs * 2 ** (row.attemptCount - 1),
+      3_600_000,
+    );
     return db.$executeRaw`
       UPDATE "NotificationQueue" SET "status" = ${retry ? "PENDING" : "FAILED"}::"NotificationStatus",
         "lastError" = ${code}, "updatedAt" = clock_timestamp(),
@@ -62,12 +101,21 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
   }
 
   async function skip(row: NotificationQueue, reason: string) {
-    await db.notificationQueue.updateMany({ where: { id: row.id, status: "PROCESSING", attemptCount: row.attemptCount }, data: { status: "SKIPPED", lastError: reason } });
+    await db.notificationQueue.updateMany({
+      where: {
+        id: row.id,
+        status: "PROCESSING",
+        attemptCount: row.attemptCount,
+      },
+      data: { status: "SKIPPED", lastError: reason },
+    });
   }
 
   async function deliver(row: NotificationQueue) {
     // A delayed caller must not start delivery for a claim already reclaimed.
-    const live = await db.$queryRaw<{ id: string }[]>`SELECT "id" FROM "NotificationQueue"
+    const live = await db.$queryRaw<
+      { id: string }[]
+    >`SELECT "id" FROM "NotificationQueue"
       WHERE "id" = ${row.id}::uuid AND "status" = 'PROCESSING' AND "attemptCount" = ${row.attemptCount}
         AND "updatedAt" > clock_timestamp() - ${options.leaseMs} * interval '1 millisecond'`;
     if (!live.length) return;
@@ -75,50 +123,104 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
     const controller = new AbortController();
     try {
       if (minimalSms && row.channel === "SMS") {
-        if (suppressRoutineSms(row)) { await skip(row, "SMS_MINIMAL_POLICY"); return; }
-        if (row.attemptCount > 1) { await skip(row, "SMS_DELIVERY_UNCERTAIN"); return; }
+        if (suppressRoutineSms(row)) {
+          await skip(row, "SMS_MINIMAL_POLICY");
+          return;
+        }
+        if (row.attemptCount > 1) {
+          await skip(row, "SMS_DELIVERY_UNCERTAIN");
+          return;
+        }
       }
       let message = renderNotification(row, options.timeZone);
-      if (minimalSms && row.channel === "SMS" && row.eventType === "BOOKING_CONFIRMED") {
-        const appointment = row.appointmentId ? await db.appointment.findUnique({ where: { id: row.appointmentId } }) : null;
-        if (!appointment || appointment.status !== "CONFIRMED" || appointment.startAt <= new Date()) { await skip(row, "CONFIRMATION_OBSOLETE"); return; }
-        const payment = await db.payment.findFirst({ where: { appointmentId: appointment.id, type: "APPOINTMENT_FEE", status: "SUCCEEDED", satisfiesObligation: true } });
-        if (!payment) { await skip(row, "CONFIRMATION_PAYMENT_UNVERIFIED"); return; }
-        if (!options.publicSiteUrl || !options.bookingLinkSecret) throw new NotificationFailure("BOOKING_LINK_NOT_CONFIGURED", false);
+      if (
+        minimalSms &&
+        row.channel === "SMS" &&
+        row.eventType === "BOOKING_CONFIRMED"
+      ) {
+        const appointment = row.appointmentId
+          ? await db.appointment.findUnique({
+              where: { id: row.appointmentId },
+            })
+          : null;
+        if (
+          !appointment ||
+          appointment.status !== "CONFIRMED" ||
+          appointment.startAt <= new Date()
+        ) {
+          await skip(row, "CONFIRMATION_OBSOLETE");
+          return;
+        }
+        const payment = await db.payment.findFirst({
+          where: {
+            appointmentId: appointment.id,
+            type: "APPOINTMENT_FEE",
+            status: "SUCCEEDED",
+            satisfiesObligation: true,
+          },
+        });
+        if (!payment) {
+          await skip(row, "CONFIRMATION_PAYMENT_UNVERIFIED");
+          return;
+        }
+        if (!options.publicSiteUrl || !options.bookingLinkSecret)
+          throw new NotificationFailure("BOOKING_LINK_NOT_CONFIGURED", false);
         const token = bookingLinkToken(options.bookingLinkSecret, row.id);
-        message = confirmationSms(row, appointment.startAt, options.timeZone, options.publicSiteUrl, token);
+        message = confirmationSms(
+          row,
+          appointment.startAt,
+          options.timeZone,
+          options.publicSiteUrl,
+          token,
+        );
         // Durable hash only; retries derive the same token without storing it in the outbox.
-        await db.appointmentGuestSession.upsert({ where: { tokenHash: tokenHash(token) }, update: {}, create: {
-          tokenHash: tokenHash(token), appointmentId: appointment.id, expiresAt: new Date(+appointment.endAt + 30 * 86400_000),
-        } });
+        await db.appointmentGuestSession.upsert({
+          where: { tokenHash: tokenHash(token) },
+          update: {},
+          create: {
+            tokenHash: tokenHash(token),
+            appointmentId: appointment.id,
+            expiresAt: new Date(+appointment.endAt + 30 * 86400_000),
+          },
+        });
       }
       if (row.eventType === "APPOINTMENT_REMINDER") {
         const p = notificationPayload.parse(row.payload);
-        const current = row.appointmentId && await db.$queryRaw<{ id: string }[]>`
+        const current =
+          row.appointmentId &&
+          (await db.$queryRaw<{ id: string }[]>`
           SELECT "id" FROM "Appointment" WHERE "id" = ${row.appointmentId}::uuid AND "status" = 'CONFIRMED'
             AND "startAt" > clock_timestamp() AND "startAt" = ${new Date(p.startAt!)}
-            AND "rescheduleCount" = ${p.rescheduleCount!}`;
-        if (!current || !current.length) throw new NotificationFailure("REMINDER_OBSOLETE", false);
+            AND "rescheduleCount" = ${p.rescheduleCount!}`);
+        if (!current || !current.length)
+          throw new NotificationFailure("REMINDER_OBSOLETE", false);
       }
       const provider = options.providers[row.channel];
       if (!provider) throw new NotificationFailure("PROVIDER_DISABLED");
       await Promise.race([
         provider.send(message, controller.signal),
         new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => { controller.abort(); reject(new NotificationFailure("PROVIDER_TIMEOUT")); }, options.timeoutMs);
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new NotificationFailure("PROVIDER_TIMEOUT"));
+          }, options.timeoutMs);
         }),
       ]);
       await db.$executeRaw`UPDATE "NotificationQueue" SET "status" = 'SENT', "sentAt" = clock_timestamp(),
         "lastError" = NULL, "updatedAt" = clock_timestamp()
         WHERE "id" = ${row.id}::uuid AND "status" = 'PROCESSING' AND "attemptCount" = ${row.attemptCount}`;
-    } catch (error) { await fail(row, error); }
-    finally { clearTimeout(timer); }
+    } catch (error) {
+      await fail(row, error);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function enqueueReminders(limit = 100) {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error("Invalid reminder batch size.");
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
+      throw new Error("Invalid reminder batch size.");
     if (!options.reminderHours) return 0;
-    return db.$transaction(async tx => {
+    return db.$transaction(async (tx) => {
       // The appointment lock serializes reminder creation with other scanners and
       // appointment changes. Existing rows, including SENT/FAILED, deduplicate a
       // schedule revision. No new queue model or unique constraint is needed.
@@ -134,29 +236,69 @@ export function createNotificationsService(db: PrismaClient, options: Notificati
         ORDER BY a."startAt", a."id" FOR UPDATE OF a SKIP LOCKED LIMIT ${limit}`;
       let count = 0;
       for (const { id } of candidates) {
-        const row = await tx.appointment.findUniqueOrThrow({ where: { id }, include: { customer: true } });
+        const row = await tx.appointment.findUniqueOrThrow({
+          where: { id },
+          include: { customer: true },
+        });
         if (minimalSms && !row.customer.email) continue;
-        const now = (await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`)[0]!.now;
+        const now = (
+          await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+        )[0]!.now;
         if (row.status !== "CONFIRMED" || row.startAt <= now) continue;
         // Recheck after locking: a concurrent scanner may have committed between
         // the statement snapshot and acquisition of this appointment's lock.
-        const payload = { schemaVersion: 1, bookingCode: row.bookingCode, startAt: row.startAt.toISOString(), rescheduleCount: row.rescheduleCount, appointmentStatus: row.status };
-        if (await tx.notificationQueue.findFirst({ where: { appointmentId: id, eventType: "APPOINTMENT_REMINDER", AND: [
-          { payload: { path: ["startAt"], equals: payload.startAt } }, { payload: { path: ["rescheduleCount"], equals: row.rescheduleCount } },
-        ] } })) continue;
-        await tx.notificationQueue.create({ data: { appointmentId: id, customerId: row.customerId,
-          eventType: "APPOINTMENT_REMINDER", channel: row.customer.email ? "EMAIL" : "SMS", recipient: row.customer.email ?? row.customer.phone,
-          status: "PENDING", scheduledAt: now, payload } });
+        const payload = {
+          schemaVersion: 1,
+          bookingCode: row.bookingCode,
+          startAt: row.startAt.toISOString(),
+          rescheduleCount: row.rescheduleCount,
+          appointmentStatus: row.status,
+        };
+        if (
+          await tx.notificationQueue.findFirst({
+            where: {
+              appointmentId: id,
+              eventType: "APPOINTMENT_REMINDER",
+              AND: [
+                { payload: { path: ["startAt"], equals: payload.startAt } },
+                {
+                  payload: {
+                    path: ["rescheduleCount"],
+                    equals: row.rescheduleCount,
+                  },
+                },
+              ],
+            },
+          })
+        )
+          continue;
+        await tx.notificationQueue.create({
+          data: {
+            appointmentId: id,
+            customerId: row.customerId,
+            eventType: "APPOINTMENT_REMINDER",
+            channel: row.customer.email ? "EMAIL" : "SMS",
+            recipient: row.customer.email ?? row.customer.phone,
+            status: "PENDING",
+            scheduledAt: now,
+            payload,
+          },
+        });
         count++;
       }
       return count;
     });
   }
 
-  return { claim, deliver, enqueueReminders, async processNext() {
-    const row = await claim();
-    if (!row) return false;
-    if (row.status === "PROCESSING") await deliver(row);
-    return true;
-  } };
+  return {
+    claim,
+    deliver,
+    enqueueReminders,
+    async processNext() {
+      const row = await claim();
+      if (!row) return false;
+      if (row.status === "PROCESSING") await deliver(row);
+      return true;
+    },
+  };
 }

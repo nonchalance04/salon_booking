@@ -22,32 +22,6 @@ export function createTestNotificationProvider(onSend: (message: NotificationMes
   return { async send(message) { onSend(message); } };
 }
 
-async function accepted(response: Response, field: "id" | "sid") {
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new NotificationFailure(`PROVIDER_HTTP_${response.status}`, response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500);
-  }
-  const body: unknown = await response.json();
-  if (!body || typeof body !== "object" || !(field in body) || typeof (body as Record<string, unknown>)[field] !== "string" || !(body as Record<string, unknown>)[field]) {
-    throw new NotificationFailure("INVALID_PROVIDER_RESPONSE");
-  }
-  if ("status" in body && ["failed", "undelivered", "canceled"].includes(String(body.status))) {
-    throw new NotificationFailure("PROVIDER_REJECTED", false);
-  }
-}
-
-export function createResendProvider(apiKey: string, from: string, request: typeof fetch = fetch): NotificationProvider {
-  return { async send(message, signal) {
-    if (message.channel !== "EMAIL") throw new NotificationFailure("CHANNEL_MISMATCH", false);
-    const response = await request("https://api.resend.com/emails", {
-      method: "POST", signal, redirect: "error",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": message.id },
-      body: JSON.stringify({ from, to: [message.recipient], subject: message.subject, text: message.text }),
-    });
-    await accepted(response, "id");
-  } };
-}
-
 export function smsRecipient(value: string) {
   const normalized = value.replace(/[\s()-]/g, "");
   const international = /^09\d{9}$/.test(normalized) ? `+63${normalized.slice(1)}` : normalized;

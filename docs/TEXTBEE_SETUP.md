@@ -56,3 +56,10 @@ The combined text is ASCII and limited to 160 characters. An excessively long pu
 Minimal SMS sends are not automatically retried after provider errors or a reclaimed in-flight claim. This limits duplicate sends at the cost of requiring manual investigation if delivery is uncertain. Email retry behavior is unchanged. Skipped jobs retain their history; sent messages are never resent by changing policy. Setting `NOTIFICATION_SMS_POLICY=all` restores legacy behavior for future jobs, so keep `minimal` for reduced SMS use.
 
 Restart the API and notification worker after applying the `notification_skipped` migration and rebuilding. Do not start a worker against an unmigrated database.
+
+
+Email verification is also available on Your Appointment. Enable
+`APPOINTMENT_EMAIL_OTP_PROVIDER=gmail` with the Gmail credentials and shared
+`APPOINTMENT_OTP_SECRET`; see EMAIL_SMS_SETUP.md section 12. Customers choose an
+enabled method. The booking cooldown, request budget, code invalidation and session
+behavior are shared across email and SMS.

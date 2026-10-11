@@ -367,3 +367,38 @@ Default notification SMS policy is minimal. Worker coalesces the normal customer
 - Default to guided mode until credentials and a model ID are configured. Provider
   fixtures verify follow-ups, card rendering, booking links, fallback, and reset;
   live Gemini quality/access acceptance remains pending credentials.
+
+
+## 2026-10-11 — Replace Resend email with Gmail SMTP
+
+At the user's request, Gmail SMTP replaces Resend as the live email provider.
+`NOTIFICATION_EMAIL_PROVIDER=gmail` requires `GMAIL_USER`, a 16-letter
+`GMAIL_APP_PASSWORD`, and matching `NOTIFICATION_EMAIL_FROM`. Resend configuration
+is no longer accepted. Disabled/test modes remain available.
+
+Nodemailer composes MIME text and manages verified TLS SMTP connections to
+`smtp.gmail.com:465`. Each attempt owns its connection so the worker deadline can
+close it. SMTP/authentication errors are mapped to controlled codes; raw responses
+and credentials are never persisted. 4xx failures retry; 5xx failures stop.
+
+Booking events, routing and outbox retries retain their existing rules. Stable
+Message-ID is for investigation, not provider idempotency. Unlike the superseded
+Resend implementation, Gmail cannot promise deduplication after acceptance followed
+by a timeout/crash. Live inbox acceptance requires salon credentials and a controlled
+booking; automated tests do not send real email. See EMAIL_SMS_SETUP.md.
+
+
+## 2026-10-11 — Appointment verification channel choice
+
+At the user's request, Your Appointment supports email through Gmail in addition
+to TextBee SMS. Customers select a configured channel and enter the corresponding
+contact recorded on the booking. Availability is global, not booking-specific,
+and unknown/mismatched contacts receive neutral responses.
+
+`APPOINTMENT_EMAIL_OTP_PROVIDER=gmail` independently enables email OTP using the
+Gmail credentials and existing `APPOINTMENT_OTP_SECRET`. API sends are direct.
+Existing five-minute expiry, five guesses, IP/contact limits and two-hour HttpOnly
+sessions remain. Identity cooldown and invalidation now use booking identity across
+channels, preventing method switching from bypassing limits or leaving multiple
+valid codes. No database migration is required. Legacy phone-only request bodies
+continue to select SMS.

@@ -55,7 +55,7 @@ async function fixture() {
   const credentials = createGuestCredentials();
   const policy = await prisma.bookingPolicyVersion.findFirstOrThrow();
   const appointment = await prisma.appointment.create({ data: { bookingCode: credentials.bookingCode, guestAccessTokenHash: credentials.hash,
-    customer: { create: { firstName: "OTP", lastName: "Guest", phone: "09171234567" } },
+    customer: { create: { firstName: "OTP", lastName: "Guest", phone: "09171234567", email: "guest@example.test" } },
     bookingPolicyVersion: { connect: { id: policy.id } }, status: "CONFIRMED", appointmentFeeAmount: "100", startAt: new Date(Date.now()+86400000), endAt: new Date(Date.now()+90000000),
   } });
   return { appointment, credentials };
@@ -154,4 +154,104 @@ test("HTTP flow sets HttpOnly cookie, restores appointment, authorizes access, a
     const logout = await fetch(`${base}/appointments/otp/logout`, { method: "POST", headers: sessionHeaders }); assert.equal(logout.status, 204);
     assert.equal((await fetch(`${base}/appointments/otp/session`, { headers: sessionHeaders })).status, 401);
   } finally { await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve())); }
+});
+
+
+test("email-only OTP matches the recorded email case-insensitively and creates an appointment-scoped session", async () => {
+  const { appointment, credentials } = await fixture();
+  const other = await fixture();
+  const emailService = createAppointmentOtpService(prisma, "s".repeat(32), undefined, provider);
+  const request = await emailService.request(appointment.bookingCode, "GUEST@example.test", "email-ip", "EMAIL");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.channel, "EMAIL"); assert.equal(sent[0]!.recipient, "guest@example.test");
+  const good = lastCode();
+  const challenge = await prisma.appointmentOtpChallenge.findUniqueOrThrow({ where: { id: request.challengeId } });
+  assert.notEqual(challenge.codeHash, good);
+  const session = await emailService.verify(request.challengeId, good, "email-ip");
+  assert.equal(await validGuestAccess(prisma, session.token, appointment), true);
+  assert.equal(await validGuestAccess(prisma, session.token, other.appointment), false);
+  assert.equal(await validGuestAccess(prisma, credentials.token, appointment), true);
+  await rejected(emailService.verify(request.challengeId, good, "email-ip"));
+  await rejected(emailService.request(appointment.bookingCode, "09171234567", "sms-ip", "SMS"), "OTP_DISABLED");
+});
+
+test("wrong email, missing booking email and unknown booking are neutral and send nothing", async () => {
+  const { appointment } = await fixture();
+  const emailService = createAppointmentOtpService(prisma, "s".repeat(32), undefined, provider);
+  const wrong = await emailService.request(appointment.bookingCode, "other@example.test", "a", "EMAIL");
+  const unknown = await emailService.request(createGuestCredentials().bookingCode, "unknown@example.test", "b", "EMAIL");
+  await prisma.appointmentOtpChallenge.deleteMany();
+  await prisma.customer.update({ where: { id: appointment.customerId }, data: { email: null } });
+  const missing = await emailService.request(appointment.bookingCode, "guest@example.test", "c", "EMAIL");
+  assert.equal(wrong.message, unknown.message); assert.equal(missing.message, unknown.message);
+  assert.equal(sent.length, 0);
+  await rejected(emailService.verify(missing.challengeId, "000000", "c"));
+});
+
+test("switching email and SMS shares cooldown, invalidates old codes and keeps the booking request budget", async () => {
+  const { appointment } = await fixture();
+  const both = createAppointmentOtpService(prisma, "s".repeat(32), provider, provider);
+  const first = await both.request(appointment.bookingCode, "guest@example.test", "a", "EMAIL");
+  const oldCode = lastCode();
+  await rejected(both.request(appointment.bookingCode, "09171234567", "b", "SMS"), "OTP_LIMIT");
+  await prisma.appointmentOtpChallenge.update({ where: { id: first.challengeId }, data: { createdAt: new Date(Date.now() - 61000) } });
+  const second = await both.request(appointment.bookingCode, "09171234567", "c", "SMS");
+  assert.equal(sent.at(-1)!.channel, "SMS");
+  await rejected(both.verify(first.challengeId, oldCode, "a"));
+  await prisma.appointmentOtpChallenge.update({ where: { id: second.challengeId }, data: { createdAt: new Date(Date.now() - 61000) } });
+  await rejected(both.request(appointment.bookingCode, "guest@example.test", "d", "EMAIL"), "OTP_LIMIT");
+});
+
+test("failed email delivery invalidates the code without revealing provider failure", async () => {
+  const { appointment } = await fixture();
+  let good = "";
+  const emailService = createAppointmentOtpService(prisma, "s".repeat(32), undefined, { async send(message) {
+    good = message.text.match(/\b\d{6}\b/)![0]; throw new Error("private failure");
+  } });
+  const request = await emailService.request(appointment.bookingCode, "guest@example.test", "a", "EMAIL");
+  assert.ok(request.message.startsWith("If the booking details match"));
+  await rejected(emailService.verify(request.challengeId, good, "a"));
+});
+
+test("HTTP email-only flow lists EMAIL, validates channel-specific input and verifies into the existing cookie session", async () => {
+  const { appointment } = await fixture();
+  const config = parseEnv({ DATABASE_URL: url.toString(), JWT_SECRET: "s".repeat(32),
+    APPOINTMENT_EMAIL_OTP_PROVIDER: "gmail", APPOINTMENT_OTP_SECRET: "s".repeat(32),
+    GMAIL_USER: "salon@gmail.com", GMAIL_APP_PASSWORD: "abcdefghijklmnop", NOTIFICATION_EMAIL_FROM: "salon@gmail.com" });
+  const server = createApp(createAppointmentOtpRouter(prisma, config, undefined, provider)).listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}/api/appointments/otp`;
+  const headers = { Origin: "http://localhost:5173", "Content-Type": "application/json" };
+  const post = (path: string, body: object) => fetch(`${base}/${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  try {
+    const options = await fetch(`${base}/options`);
+    assert.deepEqual(await options.json(), { available: true, channels: ["EMAIL"] });
+    for (const body of [
+      { channel: "EMAIL", email: "bad" }, { channel: "PUSH", email: "guest@example.test" },
+      { channel: "EMAIL", phone: "09171234567" }, { channel: "SMS", email: "guest@example.test" },
+      { channel: "EMAIL", email: "guest@example.test", phone: "09171234567" },
+    ]) assert.equal((await post("request", { bookingCode: appointment.bookingCode, ...body })).status, 400);
+    assert.equal((await post("request", { bookingCode: appointment.bookingCode, channel: "SMS", phone: "09171234567" })).status, 503);
+    const request = await post("request", { bookingCode: appointment.bookingCode, channel: "EMAIL", email: "guest@example.test" });
+    assert.equal(request.status, 200);
+    const challenge = await request.json();
+    const verify = await post("verify", { challengeId: challenge.challengeId, code: lastCode() });
+    assert.equal(verify.status, 200);
+    assert.match(verify.headers.get("set-cookie")!, /HttpOnly/);
+    const result = await verify.json();
+    assert.equal(result.appointment.bookingCode, appointment.bookingCode); assert.equal(result.token, undefined);
+    const restored = await fetch(`${base}/session`, { headers: { Cookie: verify.headers.get("set-cookie")!.split(";")[0]! } });
+    assert.equal(restored.status, 200);
+  } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+});
+
+
+test("email contact limits are shared across bookings and IPs with normalized address casing", async () => {
+  const emailService = createAppointmentOtpService(prisma, "s".repeat(32), undefined, provider);
+  for (let i = 0; i < 3; i++) {
+    await emailService.request(createGuestCredentials().bookingCode, i % 2 ? "GUEST@example.test" : "guest@example.test", `ip-${i}`, "EMAIL");
+  }
+  await rejected(emailService.request(createGuestCredentials().bookingCode, "guest@example.test", "ip-4", "EMAIL"), "OTP_LIMIT");
+  assert.equal(sent.length, 0);
 });

@@ -182,7 +182,7 @@ are covered by transaction and authorization tests.
 ## Phase 9 — Notification delivery and reminders
 
 **Status:** Implemented and verified locally. Existing outbox events are delivered by
-an independent worker; Resend/PhilSMS live acceptance awaits credentials and sender
+an independent worker; Gmail/PhilSMS live acceptance awaits credentials and sender
 setup. See `PHASE_9_VERIFICATION.md` and `ACCEPTANCE_BACKLOG.md`.
 
 - Implement email/SMS provider boundaries and the PostgreSQL-backed notification worker.

@@ -6,7 +6,7 @@ For a complete walkthrough, see the [step-by-step setup and testing guide](docs/
 including database creation, local configuration, automated checks, and guest/Admin/Cashier acceptance tests.
 
 For notification providers, follow the [email and SMS setup guide](docs/EMAIL_SMS_SETUP.md)
-for Resend email, PhilSMS SMS, worker startup, reminders, and delivery verification.
+for Gmail email, PhilSMS SMS, worker startup, reminders, and delivery verification.
 
 The backend foundation uses Node.js, TypeScript, Express, PostgreSQL, Prisma, and
 Zod. Admin/Cashier authentication and Admin account management are implemented.
@@ -17,7 +17,7 @@ payments, confirmation, receipts, Admin reconciliation, and Phase 7 appointment
 changes/no-show recovery. The user reported Phase 6 testing complete and authorized
 Phase 7; future payment diagnostics remain separately scoped. Phase 8 service
 outcomes, settlement, receipts, and commissions are implemented. Phase 9 adds an
-independent notification worker, reminders, and optional Resend/PhilSMS adapters.
+independent notification worker, reminders, and optional Gmail/PhilSMS adapters.
 Phase 10 adds authorized reports, dashboards, audit viewing, Cashier collection
 summaries and a guided salon assistant.
 
@@ -569,7 +569,7 @@ Optional live adapters (neither account is configured by this repository):
 
 | Channel | Configuration | Setup |
 | --- | --- | --- |
-| Email | `NOTIFICATION_EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM` | Verify your sender domain in Resend; FROM is a plain email address |
+| Email | `NOTIFICATION_EMAIL_PROVIDER=gmail`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `NOTIFICATION_EMAIL_FROM` | Enable Google 2-Step Verification and an App Password; FROM must match GMAIL_USER |
 | SMS | `NOTIFICATION_SMS_PROVIDER=philsms`, `PHILSMS_API_TOKEN`, `PHILSMS_SENDER_ID` | Configure an API token and approved sender for the PhilSMS dashboard v3 API |
 
 Messages use plain text and the event's stored booking code. Reminder times use
@@ -595,8 +595,8 @@ current PROCESSING attempt generation can persist results. Shutdown stops new cl
 and waits for the active attempt before disconnecting.
 
 `SENT` means provider acceptance, not verified inbox/handset receipt. Delivery is at
-least once. Resend receives the stable queue ID as `Idempotency-Key`; its deduplication
-window is 24 hours. PhilSMS message creation has no assumed idempotency guarantee.
+least once. Gmail uses a stable Message-ID derived from the queue ID, but SMTP does
+not guarantee deduplication. Gmail and PhilSMS have no assumed idempotency guarantee.
 A crash after acceptance can therefore duplicate external delivery. Keep provider
 and template configuration stable while retrying a queue item.
 
@@ -607,8 +607,8 @@ history before a deliberate operational retry. Logs exclude message bodies, reci
 addresses, credentials, and raw provider errors. A reminder-scan error does not stop
 already queued deliveries. Configure process supervision for both workers in deployment.
 
-Provider references: [Resend send API](https://resend.com/docs/api-reference/emails/send-email),
-[Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys),
+Provider references: [Google App Passwords](https://support.google.com/accounts/answer/185833),
+[Nodemailer Gmail guide](https://nodemailer.com/guides/using-gmail),
 [PhilSMS dashboard](https://dashboard.philsms.com/).
 Use a token from this dashboard; sending uses its `/api/v3/sms/send` endpoint.
 Tokens from the older `app.philsms.com` portal are not interchangeable.
@@ -659,3 +659,13 @@ sign-off remain pending. See [verification](docs/PHASE_11_VERIFICATION.md),
   archive without `.env`, dependencies or development fixture data.
 - `deploy/backup.sh` and `deploy/restore.sh` use protected libpq credentials and
   refuse backup overwrite/nonempty restore targets. Test recovery before release.
+
+
+### Appointment verification by email or SMS
+
+Your Appointment offers the enabled verification methods. SMS uses
+`APPOINTMENT_OTP_PROVIDER=textbee`; email uses `APPOINTMENT_EMAIL_OTP_PROVIDER=gmail`
+with Gmail credentials and the shared `APPOINTMENT_OTP_SECRET`. These settings are
+independent of routine notification providers. The API sends OTP directly; no
+notification worker is needed for verification. See
+[setup instructions](docs/EMAIL_SMS_SETUP.md#12-let-customers-verify-appointment-access-by-email-or-sms).

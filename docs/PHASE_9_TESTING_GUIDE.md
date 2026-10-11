@@ -71,7 +71,7 @@ NOTIFICATION_RETRY_BASE_MS=60000
 ```
 
 Starting with reminders off makes the first event counts easier to inspect.
-No Resend/PhilSMS keys are needed for test providers. Remove invalid stale values
+No Gmail/PhilSMS credentials are needed for test providers. Remove invalid stale values
 from optional provider variables if startup validation reports them.
 
 For the browser confirmation scenario, you can use the existing test payment
@@ -148,7 +148,7 @@ node --import tsx --test tests/notifications.test.ts
 ```
 
 **Expected:** 5 tests pass, 0 failures. These test provider request formatting,
-Resend idempotency keys, SMS normalization, error classification, all message
+Gmail SMTP lifecycle, MIME encoding and stable Message-ID, SMS normalization, error classification, all message
 variants, and configuration restrictions. HTTP calls are mocked.
 
 ### 3.2 Notification database tests
@@ -510,29 +510,30 @@ QA database with your own recipient contact data. Enabling a channel will proces
 shared synthetic backlog to live delivery. A row already SENT by a test provider
 will not be sent again—create a new QA booking/event instead of resetting it.
 
-### 12.1 Resend email
+### 12.1 Gmail email
 
-1. Follow [Resend's send-email documentation](https://resend.com/docs/api-reference/emails/send-email)
-   to configure a verified sending domain and API key.
+1. Follow [Gmail setup](EMAIL_SMS_SETUP.md#5-set-up-gmail-email) to enable
+   Google 2-Step Verification and create an App Password.
 2. Set these in the QA backend `.env`:
 
 ```dotenv
-NOTIFICATION_EMAIL_PROVIDER=resend
-RESEND_API_KEY=YOUR_PRIVATE_API_KEY
-NOTIFICATION_EMAIL_FROM=YOUR_VERIFIED_SENDER_EMAIL
+NOTIFICATION_EMAIL_PROVIDER=gmail
+GMAIL_USER=your-salon@gmail.com
+GMAIL_APP_PASSWORD=YOUR_16_LETTER_APP_PASSWORD
+NOTIFICATION_EMAIL_FROM=your-salon@gmail.com
 NOTIFICATION_SMS_PROVIDER=disabled
 ```
 
 3. Restart the notification worker. Create/confirm one QA booking using an inbox you
    control. Keep payment simulation enabled if appropriate; no real payment is needed.
-4. Observe its queue status and Resend dashboard result.
+4. Observe queue status and Gmail's Sent folder.
 5. Open the received email, including spam/junk folders if needed.
 
 **Pass:** correct inbox, subject, booking code and wording; queue SENT with sentAt;
 no duplicate during ordinary polling. Record receipt time and redacted evidence.
-The adapter sends queue ID as Idempotency-Key. See
-[Resend idempotency documentation](https://resend.com/docs/dashboard/emails/idempotency-keys)
-for its deduplication window; do not force repeated real sends to demonstrate it.
+Gmail does not guarantee deduplication even though Message-ID is stable. A timeout
+or crash after acceptance may duplicate a message during retry. Inspect recipient
+receipt and sender evidence before manually retrying uncertain deliveries.
 
 ### 12.2 PhilSMS SMS
 

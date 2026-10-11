@@ -14,13 +14,15 @@ export const envSchema = z.object({
   GEMINI_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).optional()),
   GEMINI_MODEL: z.preprocess(v => v === "" ? undefined : v, z.string().trim().regex(/^[A-Za-z0-9._-]+$/).optional()),
   CHATBOT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(15000),
-  NOTIFICATION_EMAIL_PROVIDER: z.enum(["disabled", "test", "resend"]).default("disabled"),
+  NOTIFICATION_EMAIL_PROVIDER: z.enum(["disabled", "test", "gmail"]).default("disabled"),
   NOTIFICATION_SMS_PROVIDER: z.enum(["disabled", "test", "philsms", "textbee"]).default("disabled"),
+  APPOINTMENT_EMAIL_OTP_PROVIDER: z.enum(["disabled", "gmail"]).default("disabled"),
   APPOINTMENT_OTP_PROVIDER: z.enum(["disabled", "textbee"]).default("disabled"),
   TEXTBEE_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).regex(/^\S+$/).optional()),
   TEXTBEE_DEVICE_ID: z.preprocess(v => v === "" ? undefined : v, z.string().regex(/^[a-fA-F0-9]{24}$/).optional()),
   APPOINTMENT_OTP_SECRET: z.preprocess(v => v === "" ? undefined : v, z.string().min(32).optional()),
-  RESEND_API_KEY: z.preprocess(v => v === "" ? undefined : v, z.string().min(10).optional()),
+  GMAIL_USER: z.preprocess(v => v === "" ? undefined : v, z.email().optional()),
+  GMAIL_APP_PASSWORD: z.preprocess(v => typeof v === "string" ? v.replace(/ /g, "") || undefined : v, z.string().regex(/^[A-Za-z]{16}$/).optional()),
   NOTIFICATION_EMAIL_FROM: z.preprocess(v => v === "" ? undefined : v, z.email().optional()),
   PHILSMS_API_TOKEN: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).regex(/^\S+$/).optional()),
   PHILSMS_SENDER_ID: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).max(11).regex(/^[A-Za-z0-9 ]+$/).optional()),
@@ -68,12 +70,16 @@ export const envSchema = z.object({
   for (const field of ["NOTIFICATION_EMAIL_PROVIDER", "NOTIFICATION_SMS_PROVIDER"] as const) {
     if (value.NODE_ENV === "production" && value[field] === "test") context.addIssue({ code: "custom", path: [field], message: "Test notification providers are disabled in production." });
   }
-  if (value.APPOINTMENT_OTP_PROVIDER === "textbee" && !value.APPOINTMENT_OTP_SECRET) {
+  if ((value.APPOINTMENT_OTP_PROVIDER === "textbee" || value.APPOINTMENT_EMAIL_OTP_PROVIDER === "gmail") && !value.APPOINTMENT_OTP_SECRET) {
     context.addIssue({ code: "custom", path: ["APPOINTMENT_OTP_SECRET"], message: "A separate OTP secret is required." });
+  }
+  if ((value.NOTIFICATION_EMAIL_PROVIDER === "gmail" || value.APPOINTMENT_EMAIL_OTP_PROVIDER === "gmail") && value.GMAIL_USER && value.NOTIFICATION_EMAIL_FROM &&
+      value.GMAIL_USER.toLowerCase() !== value.NOTIFICATION_EMAIL_FROM.toLowerCase()) {
+    context.addIssue({ code: "custom", path: ["NOTIFICATION_EMAIL_FROM"], message: "Gmail sender must match GMAIL_USER." });
   }
   const notificationFields = [
     ...(value.NOTIFICATION_SMS_PROVIDER === "textbee" || value.APPOINTMENT_OTP_PROVIDER === "textbee" ? ["TEXTBEE_API_KEY", "TEXTBEE_DEVICE_ID"] as const : []),
-    ...(value.NOTIFICATION_EMAIL_PROVIDER === "resend" ? ["RESEND_API_KEY", "NOTIFICATION_EMAIL_FROM"] as const : []),
+    ...(value.NOTIFICATION_EMAIL_PROVIDER === "gmail" || value.APPOINTMENT_EMAIL_OTP_PROVIDER === "gmail" ? ["GMAIL_USER", "GMAIL_APP_PASSWORD", "NOTIFICATION_EMAIL_FROM"] as const : []),
     ...(value.NOTIFICATION_SMS_PROVIDER === "philsms" ? ["PHILSMS_API_TOKEN", "PHILSMS_SENDER_ID"] as const : []),
   ];
   for (const field of notificationFields) {
