@@ -7,6 +7,7 @@ import {
 } from "./notification-provider.js";
 
 export const notificationPayload = z.object({
+  paymentId: z.string().optional(),
   appointmentFeePaid: z.boolean().optional(),
   schemaVersion: z.literal(1),
   bookingCode: z
@@ -55,12 +56,12 @@ export function renderNotification(
   let text: string;
   switch (row.eventType) {
     case "BOOKING_CONFIRMED":
-      if (row.channel === "EMAIL" && p.appointmentFeePaid) {
+      if (row.channel === "EMAIL" && (p.appointmentFeePaid || (p.paymentId && p.appointmentStatus === "CONFIRMED" && p.reconciliationRequired === false))) {
         subject = "Payment received - your appointment is confirmed";
         text =
           "Thank you! Your appointment fee has been received.\n\n" +
           `Your booking is confirmed${when ? ` for ${when}` : ""}.\n\n` +
-          "Please arrive 10 minutes early.\n" +
+          "Appointment reminder: Please arrive 10 minutes early.\n" +
           "We look forward to seeing you!";
       } else {
         subject = "Booking confirmed";

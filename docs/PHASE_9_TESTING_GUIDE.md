@@ -1,3 +1,8 @@
+> Updated email policy: paid bookings send one combined payment, confirmation and
+> arrival-reminder email. Older instructions below expecting separate email payment
+> notices/reminders are superseded by EMAIL_SMS_SETUP.md and the notification
+> integration tests. Reminder-scanner tests now apply to full-policy SMS only.
+
 # Phase 9 — Notification delivery and reminders: testing guide
 
 For account creation, sender verification, environment configuration, and real

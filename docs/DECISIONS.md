@@ -402,3 +402,16 @@ sessions remain. Identity cooldown and invalidation now use booking identity acr
 channels, preventing method switching from bypassing limits or leaving multiple
 valid codes. No database migration is required. Legacy phone-only request bodies
 continue to select SMS.
+
+
+## 2026-10-11 — One email for paid booking confirmation and reminder
+
+At the user's request, successful appointment-fee payment sends one combined
+email containing payment acknowledgement, confirmation, appointment date/time,
+booking reference and arrival reminder. Separate email reminders are no longer
+enqueued; previously queued email reminders are marked SKIPPED at delivery.
+The payment transaction retains its SKIPPED payment record. Legacy pending payment
+emails are suppressed only when the same appointment, recipient and payment ID
+have a confirmation record and no reconciliation is required. Standalone/review
+payments and cancellation/reschedule/completion notices retain their meaning.
+Full-policy SMS reminders remain supported. No history is deleted or re-sent.

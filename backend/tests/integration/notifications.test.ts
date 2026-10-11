@@ -151,20 +151,20 @@ test("concurrent reminder scans deduplicate each schedule revision and respect e
   await appointment({ startAt: new Date(Date.now() + 25 * 3600000) });
   const worker = service();
   const counts = await Promise.all([worker.enqueueReminders(), worker.enqueueReminders(), worker.enqueueReminders()]);
-  assert.equal(counts.reduce((a, b) => a + b), 2);
+  assert.equal(counts.reduce((a, b) => a + b), 1);
   assert.equal(await worker.enqueueReminders(), 0);
-  assert.equal((await prisma.notificationQueue.findFirstOrThrow({ where: { appointmentId: email.id } })).channel, "EMAIL");
+  assert.equal(await prisma.notificationQueue.count({ where: { appointmentId: email.id } }), 0);
   assert.equal((await prisma.notificationQueue.findFirstOrThrow({ where: { appointmentId: sms.id } })).channel, "SMS");
   while (await worker.processNext()) { /* drain */ }
   assert.equal(await worker.enqueueReminders(), 0);
-  await prisma.appointment.update({ where: { id: email.id }, data: { rescheduleCount: { increment: 1 }, startAt: new Date(+email.startAt + 3600000) } });
+  await prisma.appointment.update({ where: { id: sms.id }, data: { rescheduleCount: { increment: 1 }, startAt: new Date(+sms.startAt + 3600000) } });
   assert.equal(await worker.enqueueReminders(), 1);
-  assert.equal(await prisma.notificationQueue.count({ where: { appointmentId: email.id } }), 2);
+  assert.equal(await prisma.notificationQueue.count({ where: { appointmentId: sms.id } }), 2);
 });
 
 test("cancelled, rescheduled and already-started reminders are suppressed before sending", async () => {
   for (const change of [{ status: "CANCELLED" as const }, { rescheduleCount: 1 }, { startAt: new Date(Date.now() - 1000) }]) {
-    const booking = await appointment(); const worker = service({ async send() { assert.fail("obsolete reminder must not send"); } });
+    const booking = await appointment({}, null); const worker = service({ async send() { assert.fail("obsolete reminder must not send"); } });
     await worker.enqueueReminders();
     await prisma.appointment.update({ where: { id: booking.id }, data: change });
     await worker.processNext();
@@ -175,7 +175,7 @@ test("cancelled, rescheduled and already-started reminders are suppressed before
 });
 
 test("reminder scans skip locked appointments and disabled reminders create no rows", async () => {
-  const booking = await appointment(); let release!: () => void; let entered!: () => void;
+  const booking = await appointment({}, null); let release!: () => void; let entered!: () => void;
   const started = new Promise<void>(resolve => { entered = resolve; });
   const blocked = new Promise<void>(resolve => { release = resolve; });
   const transaction = prisma.$transaction(async tx => {
@@ -190,7 +190,7 @@ test("reminder scans skip locked appointments and disabled reminders create no r
 });
 
 test("reminder pagination progresses past existing rows", async () => {
-  await appointment(); await appointment(); await appointment();
+  await appointment({}, null); await appointment({}, null); await appointment({}, null);
   const worker = service();
   assert.equal(await worker.enqueueReminders(2), 2);
   assert.equal(await worker.enqueueReminders(2), 1);
@@ -218,11 +218,11 @@ test("minimal SMS sends one combined confirmation and skips old separate notific
   assert.equal(JSON.stringify((await stored(confirmation.id)).payload).includes(token), false);
 });
 
-test("minimal policy generates email reminders only and preserves SMS cancellation notices", async () => {
+test("minimal policy generates no separate reminders and preserves SMS cancellation notices", async () => {
   const smsBooking = await appointment({}, null); await appointment();
   const messages: NotificationMessage[] = [];
   const worker = service(createTestNotificationProvider(m => messages.push(m)), { smsPolicy: "minimal" });
-  assert.equal(await worker.enqueueReminders(), 1);
+  assert.equal(await worker.enqueueReminders(), 0);
   assert.equal(await prisma.notificationQueue.count({ where: { channel: "SMS", eventType: "APPOINTMENT_REMINDER" } }), 0);
   await queue({ appointmentId: smsBooking.id, channel: "SMS", recipient: "09171234567", eventType: "BOOKING_CANCELLED" });
   while (await worker.processNext()) { /* drain */ }
@@ -248,4 +248,41 @@ test("obsolete confirmation never sends a misleading message or creates a link",
   await service({ async send() { assert.fail("obsolete confirmation"); } }, { smsPolicy: "minimal" }).processNext();
   assert.equal((await stored(row.id)).status, "SKIPPED");
   assert.equal((await stored(row.id)).lastError, "CONFIRMATION_OBSOLETE");
+});
+
+
+test("email sends one confirmation including payment and reminder, suppressing paired legacy payment and queued reminder", async () => {
+  const booking = await appointment();
+  const payload = { schemaVersion: 1, bookingCode: booking.bookingCode, paymentId: randomUUID(),
+    appointmentStatus: "CONFIRMED", reconciliationRequired: false, startAt: booking.startAt.toISOString() };
+  const payment = await queue({ appointmentId: booking.id, eventType: "PAYMENT_RECEIVED", payload });
+  const confirmation = await queue({ appointmentId: booking.id, eventType: "BOOKING_CONFIRMED", payload });
+  const reminder = await queue({ appointmentId: booking.id, eventType: "APPOINTMENT_REMINDER", payload: { ...payload, rescheduleCount: 0 } });
+  const messages: NotificationMessage[] = [];
+  const worker = service(createTestNotificationProvider(m => messages.push(m)));
+  assert.equal(await worker.enqueueReminders(), 0);
+  while (await worker.processNext()) {}
+  assert.equal(messages.length, 1);
+  assert.match(messages[0]!.subject, /Payment received.*confirmed/);
+  assert.match(messages[0]!.text, /fee has been received/);
+  assert.match(messages[0]!.text, /Asia\/Manila/);
+  assert.match(messages[0]!.text, /Appointment reminder: Please arrive 10 minutes early/);
+  assert.equal((await stored(confirmation.id)).status, "SENT");
+  assert.equal((await stored(payment.id)).lastError, "EMAIL_COMBINED_WITH_CONFIRMATION");
+  assert.equal((await stored(reminder.id)).lastError, "EMAIL_REMINDER_INCLUDED_IN_CONFIRMATION");
+  assert.equal(await worker.processNext(), false);
+});
+
+test("email payment notices without a matching confirmation and reconciliation exceptions are preserved", async () => {
+  const booking = await appointment();
+  const payload = { schemaVersion: 1, bookingCode: booking.bookingCode, paymentId: randomUUID(), appointmentStatus: "CONFIRMED", reconciliationRequired: false };
+  await queue({ appointmentId: booking.id, eventType: "BOOKING_CONFIRMED", payload: { ...payload, paymentId: randomUUID() } });
+  const standalone = await queue({ appointmentId: booking.id, eventType: "PAYMENT_RECEIVED", payload });
+  const review = await queue({ appointmentId: booking.id, eventType: "PAYMENT_RECEIVED", payload: { ...payload, reconciliationRequired: true } });
+  const messages: NotificationMessage[] = [];
+  const worker = service(createTestNotificationProvider(m => messages.push(m)));
+  while (await worker.processNext()) {}
+  assert.equal((await stored(standalone.id)).status, "SENT");
+  assert.equal((await stored(review.id)).status, "SENT");
+  assert.match(messages.find(m => m.id === review.id)!.text, /does not confirm/);
 });

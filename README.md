@@ -577,7 +577,12 @@ Messages use plain text and the event's stored booking code. Reminder times use
 excluded. Philippine `09XXXXXXXXX` numbers become `+639XXXXXXXXX`; the PhilSMS adapter accepts Philippine mobile numbers only and sends digits without `+`. Email remains the preferred channel
 when an email address was supplied; there is no automatic channel fallback.
 
-`NOTIFICATION_REMINDER_HOURS` defaults to 24 (0 disables reminders). A scan queues
+Paid email bookings receive one combined payment, confirmation and arrival-reminder
+email. Separate email reminder records are skipped, and no new email reminders are
+queued. Payment exceptions requiring review retain separate notices.
+
+For SMS with `NOTIFICATION_SMS_POLICY=all`, `NOTIFICATION_REMINDER_HOURS` defaults
+to 24 (0 disables reminders). For bookings without email, a scan queues
 one reminder for each confirmed appointment schedule revision in the upcoming
 window, including bookings confirmed within that window. Repeated/concurrent scans
 do not duplicate it. Rescheduling permits a new reminder; old reminders are checked

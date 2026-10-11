@@ -122,6 +122,24 @@ export function createNotificationsService(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
     try {
+      if (row.channel === "EMAIL" && row.eventType === "APPOINTMENT_REMINDER") {
+        await skip(row, "EMAIL_REMINDER_INCLUDED_IN_CONFIRMATION");
+        return;
+      }
+      if (row.channel === "EMAIL" && row.eventType === "PAYMENT_RECEIVED" && row.appointmentId) {
+        const payload = notificationPayload.safeParse(row.payload);
+        if (payload.success && payload.data.paymentId && payload.data.reconciliationRequired === false && payload.data.appointmentStatus === "CONFIRMED") {
+          const confirmation = await db.notificationQueue.findFirst({ where: {
+            appointmentId: row.appointmentId, channel: "EMAIL", recipient: row.recipient,
+            eventType: "BOOKING_CONFIRMED",
+            payload: { path: ["paymentId"], equals: payload.data.paymentId },
+          } });
+          if (confirmation) {
+            await skip(row, "EMAIL_COMBINED_WITH_CONFIRMATION");
+            return;
+          }
+        }
+      }
       if (minimalSms && row.channel === "SMS") {
         if (suppressRoutineSms(row)) {
           await skip(row, "SMS_MINIMAL_POLICY");
@@ -219,14 +237,15 @@ export function createNotificationsService(
   async function enqueueReminders(limit = 100) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 1000)
       throw new Error("Invalid reminder batch size.");
-    if (!options.reminderHours) return 0;
+    // Email appointment details are included in confirmation; only full-policy SMS uses reminders.
+    if (!options.reminderHours || minimalSms || !options.providers.SMS) return 0;
     return db.$transaction(async (tx) => {
       // The appointment lock serializes reminder creation with other scanners and
       // appointment changes. Existing rows, including SENT/FAILED, deduplicate a
       // schedule revision. No new queue model or unique constraint is needed.
       const candidates = await tx.$queryRaw<{ id: string }[]>`
         SELECT a."id" FROM "Appointment" a WHERE a."status" = 'CONFIRMED'
-          AND (${!minimalSms} OR EXISTS (SELECT 1 FROM "Customer" c WHERE c.id = a."customerId" AND c.email IS NOT NULL))
+          AND EXISTS (SELECT 1 FROM "Customer" c WHERE c.id = a."customerId" AND c.email IS NULL)
           AND a."startAt" > clock_timestamp()
           AND a."startAt" <= clock_timestamp() + ${options.reminderHours} * interval '1 hour'
           AND NOT EXISTS (SELECT 1 FROM "NotificationQueue" q WHERE q."appointmentId" = a."id"
@@ -240,7 +259,7 @@ export function createNotificationsService(
           where: { id },
           include: { customer: true },
         });
-        if (minimalSms && !row.customer.email) continue;
+        if (row.customer.email) continue;
         const now = (
           await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
         )[0]!.now;

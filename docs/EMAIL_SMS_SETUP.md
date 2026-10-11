@@ -234,7 +234,7 @@ Keep credentials out of Git, frontend code, `.env.example`, and reports.
    For production, build with `npm run build` and supervise `npm run start:notifications`.
 4. Create a **new** booking using an inbox you control and complete payment/cashier
    confirmation. An unpaid hold does not send a booking confirmation.
-5. Expect payment-received and booking-confirmed EMAIL rows to become SENT.
+5. Expect one combined booking-confirmation EMAIL to become SENT. Its separate payment row is SKIPPED; no separate email reminder is scheduled.
 6. Check Gmail's Sent folder and the recipient inbox/spam folder. Verify the booking
    code, appointment date/time, and Asia/Manila label. SENT means SMTP acceptance,
    not proven inbox delivery. Inspect later bounce mail in the sender's mailbox.
@@ -312,13 +312,17 @@ email (SMS delivery). This configuration does not introduce dual-channel sending
 
 ## 8. Test appointment reminders and event changes
 
+Email arrival reminders are included in the combined paid-booking confirmation.
+There is no separate email reminder. The following reminder test applies only to
+SMS: use a booking without email and `NOTIFICATION_SMS_POLICY=all`.
+
 1. Set `NOTIFICATION_REMINDER_HOURS=24` and restart the notification worker.
 2. Confirm an appointment in the next 24 hours but still beyond the configured
    minimum booking lead time. Choose an actually available slot.
 3. Wait for the worker and inspect its notification rows. Expect one
    `APPOINTMENT_REMINDER` for that schedule revision, in addition to confirmation
    and payment events.
-4. Verify the reminder arrives through the selected channel and shows the correct
+4. Verify the reminder arrives by SMS and shows the correct
    salon-local time. Repeated scans/restarts should not create another reminder
    for the same schedule revision.
 5. Use an eligible booking to test rescheduling and cancellation. A reschedule can
@@ -341,7 +345,7 @@ already queued reminders. Disabling a delivery channel leaves its rows queued.
 | `NOTIFICATION_LEASE_MS` | 60000 | Time after which an abandoned PROCESSING claim can be reclaimed |
 | `NOTIFICATION_MAX_ATTEMPTS` | 5 | Maximum attempts per queue row |
 | `NOTIFICATION_RETRY_BASE_MS` | 60000 | Initial retry delay; doubles with attempts, capped at an hour |
-| `NOTIFICATION_REMINDER_HOURS` | 24 | Upcoming confirmed appointment window; 0 disables scanning |
+| `NOTIFICATION_REMINDER_HOURS` | 24 | SMS reminder window when SMS policy is `all`; 0 disables scanning |
 
 Keep the defaults initially. Environment validation requires the lease to exceed
 the timeout by more than one second. Transient errors such as HTTP 429 or 5xx are
@@ -505,3 +509,12 @@ Test email-only, SMS-only and both-enabled configurations. Test incorrect contac
 expired/reused codes, switching methods and browser refresh/logout. Automated tests
 use fake providers and a disposable database; live Gmail delivery still needs a
 controlled inbox test.
+
+
+### Current email delivery policy
+
+Paid bookings receive one combined payment/confirmation/arrival-reminder email.
+The reminder window setting now applies only to SMS with `NOTIFICATION_SMS_POLICY=all`.
+Previously queued email reminders are skipped when the updated worker processes them.
+Payment exceptions needing salon review retain their separate, accurate notices.
+Restart the notification worker after updating; messages already sent cannot be withdrawn.
