@@ -1,0 +1,59 @@
+.salon-receipt {
+  box-sizing: border-box; width: 100%; max-width: 680px; min-width: 0;
+  margin: 24px 0; padding: 32px; border: 1px solid #ddddd7; border-top: 4px solid #d3ae30;
+  border-radius: 20px; background: #fff; color: #292a28;
+  font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.salon-receipt * { box-sizing: border-box; }
+.salon-receipt .receipt-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.salon-receipt .receipt-brand { display: flex; flex-direction: column; color: #d3ae30; flex-shrink: 0; }
+.salon-receipt .receipt-brand span { font-size: 43px; font-weight: 900; letter-spacing: -2.8px; line-height: 1; }
+.salon-receipt .receipt-brand small { margin-top: 7px; color: #d3ae30; font-size: 18px; font-weight: 700; letter-spacing: -.55px; line-height: 1.2; }
+.salon-receipt .receipt-label { padding: 7px 12px; border: 1px solid #ddddd7; border-radius: 99px; font-size: 11px; color: #5e6059; text-align: center; }
+.salon-receipt .receipt-salon { margin: 24px 0; color: #73756f; font-size: 12px; }
+.salon-receipt .receipt-salon strong { color: #292a28; font-size: 14px; }
+.salon-receipt .receipt-salon p { margin: 4px 0 0; }
+.salon-receipt .receipt-heading { padding-top: 24px; border-top: 1px solid #ddddd7; }
+.salon-receipt .receipt-eyebrow { margin: 0 0 12px; color: #987b1f; font-size: 10px; font-weight: 700; letter-spacing: 1.8px; }
+.salon-receipt .receipt-heading > div h3 { margin: 0; color: #292a28; font-size: 28px; font-weight: 700; letter-spacing: -.8px; line-height: 1.2; }
+.salon-receipt .receipt-heading h3 + p { margin: 10px 0 24px; color: #73756f; }
+.salon-receipt .receipt-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin: 0 0 24px; padding: 20px; background: #f3f3f1; border: 1px solid #ddddd7; border-radius: 14px; }
+.salon-receipt .receipt-details > div, .salon-receipt .receipt-payment > div { display: block; min-width: 0; }
+.salon-receipt .receipt-details dt, .salon-receipt .receipt-payment dt { min-width: 0; margin: 0 0 6px; color: #73756f; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.salon-receipt .receipt-details dd, .salon-receipt .receipt-payment dd { margin: 0; color: #292a28; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.salon-receipt .receipt-services { width: 100%; margin: 0 0 24px; border-collapse: collapse; table-layout: fixed; white-space: normal; font-size: 13px; }
+.salon-receipt .receipt-services th, .salon-receipt .receipt-services td { padding: 12px 8px; border: 0; border-bottom: 1px solid #ddddd7; text-align: left; color: #292a28; overflow-wrap: anywhere; }
+.salon-receipt .receipt-services th { color: #73756f; background: #fff; font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+.salon-receipt .receipt-services th:last-child, .salon-receipt .receipt-services td:last-child { width: 32%; text-align: right; font-variant-numeric: tabular-nums; }
+.salon-receipt .receipt-total { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 20px; background: #f5edd1; border: 1px solid #e4d69d; border-radius: 14px; }
+.salon-receipt .receipt-total span { font-size: 13px; font-weight: 700; }
+.salon-receipt .receipt-total strong { color: #292a28; font-size: 26px; letter-spacing: -.7px; font-variant-numeric: tabular-nums; }
+.salon-receipt .receipt-payment { display: grid; gap: 18px; margin: 24px 0; }
+.salon-receipt .receipt-footer { border-top: 1px solid #ddddd7; padding-top: 20px; text-align: center; color: #73756f; }
+.salon-receipt .receipt-footer p { margin: 0 0 6px; font-size: 13px; }
+.salon-receipt .receipt-footer small { color: #73756f; font-size: 11px; }
+.salon-receipt .receipt-actions { margin-top: 24px; }
+.salon-receipt .receipt-print { width: 100%; padding: 12px 20px; border: 1px solid #d3ae30; border-radius: 99px; background: #d3ae30; color: #292a28; font: 700 13px Arial, Helvetica, sans-serif; cursor: pointer; }
+.salon-receipt .receipt-print:hover { background: #c8a124; }
+.salon-receipt .receipt-print:focus-visible { outline: 3px solid #987b1f; outline-offset: 3px; }
+.receipt-print-root { display: none; }
+@media (max-width: 480px) {
+  .salon-receipt { padding: 22px 18px; border-radius: 16px; }
+  .salon-receipt .receipt-header { align-items: flex-start; gap: 12px; }
+  .salon-receipt .receipt-label { max-width: 90px; padding: 6px 10px; }
+  .salon-receipt .receipt-heading > div h3 { font-size: 24px; }
+  .salon-receipt .receipt-details { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
+  .salon-receipt .receipt-total { padding: 16px; }
+  .salon-receipt .receipt-total strong { font-size: 24px; }
+}
+@media print {
+  @page { margin: 15mm; }
+  body > * { display: none !important; }
+  body > .receipt-print-root { display: block !important; }
+  .receipt-print-root .salon-receipt { width: 100%; max-width: none; margin: 0; padding: 20px; box-shadow: none; }
+  .receipt-print-root .receipt-details { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .receipt-print-root .receipt-header, .receipt-print-root .receipt-details, .receipt-print-root .receipt-total,
+  .receipt-print-root .receipt-payment, .receipt-print-root .receipt-footer, .receipt-print-root tr { break-inside: avoid; }
+  .receipt-print-root thead { display: table-header-group; }
+  .receipt-print-root .receipt-actions { display: none; }
+}

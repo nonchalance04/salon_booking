@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ReceiptView } from "./receipt";
 import { api } from "./api";
 import { startPaymentSync } from "./payment-sync";
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
@@ -67,12 +68,8 @@ export function FeePaymentHistory({ payments }: { payments: FeePayment[] }) {
   return payments.length ? <section aria-label="Appointment-fee payments"><h3>Appointment-fee payments</h3>{payments.map(p => <div key={p.id} className="payment-record">
     <p>PHP {p.amount} · {p.status}{p.reconciliationStatus === "REQUIRED" && " · Salon review required"}</p>
     {p.reconciliationStatus === "REQUIRED" && <p>This payment was not applied to the booking fee. Contact the salon for reconciliation.</p>}
-    {p.receipt && <details><summary>Receipt {p.receipt.receiptNumber}</summary><ReceiptDetails snapshot={p.receipt.receiptSnapshot} /></details>}
+    {p.receipt && <details><summary>Receipt {p.receipt.receiptNumber}</summary>{p.receipt.receiptSnapshot && <ReceiptView receipt={{ receiptNumber: p.receipt.receiptNumber, receiptSnapshot: p.receipt.receiptSnapshot }} />}</details>}
   </div>)}</section> : null;
-}
-function ReceiptDetails({ snapshot }: { snapshot?: Record<string, unknown> }) {
-  if (!snapshot) return null;
-  return <dl>{["bookingCode", "customerName", "amount", "currency", "method", "externalReference", "paidAt"].map(key => <div key={key}><dt>{({ bookingCode: "Booking", customerName: "Customer", amount: "Amount", currency: "Currency", method: "Method", externalReference: "Payment reference", paidAt: "Paid at" } as Record<string, string>)[key]}</dt><dd>{String(snapshot[key] ?? "")}</dd></div>)}</dl>;
 }
 type StaffBooking = { bookingCode: string; status: string; appointmentFeeAmount: string; customer: { firstName: string; lastName: string }; payments: FeePayment[] };
 type ReviewPayment = FeePayment & { provider: string; method: string; externalReference: string | null; reconciliationReason: string | null; appointment: { bookingCode: string; status: string } };

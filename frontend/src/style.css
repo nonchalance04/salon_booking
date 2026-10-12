@@ -44,21 +44,6 @@
 .payment-record dd { margin: 0 0 10px; overflow-wrap: anywhere; }
 .fee-payment .actions { flex-wrap: wrap; }
 
-.settlement-receipt { border: 1px solid #ccc; padding: 1.5rem; margin: 1rem 0; max-width: 42rem; background: white; color: #111; }
-.settlement-receipt { overflow-wrap: anywhere; }
-.settlement-receipt table { white-space: normal; table-layout: fixed; }
-.settlement-receipt th, .settlement-receipt td { padding: .6rem; overflow-wrap: anywhere; }
-.settlement-receipt th:last-child, .settlement-receipt td:last-child { width: 6rem; }
-.receipt-print-root { display: none; }
-@media print {
-  @page { margin: 15mm; }
-  body > * { display: none !important; }
-  body > .receipt-print-root { display: block !important; }
-  .receipt-print-root .settlement-receipt { width: 100%; max-width: none; margin: 0; padding: 0; border: 0; }
-  .receipt-print-root tr, .receipt-print-root p { break-inside: avoid; }
-  .receipt-print-root thead { display: table-header-group; }
-}
-
 .chat-answer { white-space: pre-line; line-height: 1.7; }
 .chat-history { margin-block: 1.5rem; }
 .table-wrap pre { max-width: 36rem; max-height: 28rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; }

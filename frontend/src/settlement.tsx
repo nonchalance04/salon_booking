@@ -1,36 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { createPortal } from "react-dom";
 import { api } from "./api";
 import { cashChange } from "./cashier-money";
 import { ConfirmedServices } from "./confirmed-services";
+import { ReceiptView, type Receipt } from "./receipt";
 type Outcome = "SCHEDULED" | "PERFORMED" | "NOT_PERFORMED";
-type Receipt = { receiptNumber: string; receiptSnapshot: { customerName: string; bookingCode: string; type: string; amount: string; currency: string; method: string; paidAt: string; externalReference: string; salon: { name: string; address: string; phone: string } | null; services?: { name: string; amount: string }[] } };
 type Appointment = { bookingCode: string; status: string; revision: string; completionType: string | null; customer: { firstName: string; lastName: string }; eligibleAppointmentFee: string; carriedFee: boolean; amountDue: string;
   services: { id: string; name: string; staff: string; price: string; outcome: Outcome; actualChargedAmount: string | null }[];
   payments: { id: string; type: string; status: string; amount: string; receipt: Receipt | null }[];
   commissions?: { appointmentServiceId: string; serviceAmount: string; allocatedAppointmentFee: string; commissionBase: string; commissionRate: string; commissionAmount: string }[] };
-function ReceiptContent({ receipt }: { receipt: Receipt }) {
-  const r = receipt.receiptSnapshot;
-  return <><h3>{r.salon?.name ?? "Salon"}</h3>{r.salon && <p>{r.salon.address}<br />{r.salon.phone}</p>}
-    <h4>Receipt {receipt.receiptNumber}</h4><p>{r.customerName} · {r.bookingCode}<br />{r.type.replaceAll("_", " ")}</p>
-    {r.services && <table><thead><tr><th>Performed service</th><th>PHP</th></tr></thead><tbody>{r.services.map((s, i) => <tr key={i}><td>{s.name}</td><td>{s.amount}</td></tr>)}</tbody></table>}
-    <p><strong>Paid: {r.currency} {r.amount}</strong><br />{r.method}<br />Payment reference: {r.externalReference}<br />{new Date(r.paidAt).toLocaleString("en-PH", { timeZone: "Asia/Manila" })} (Asia/Manila)</p>
-  </>;
-}
-function ReceiptView({ receipt }: { receipt: Receipt }) {
-  const [printing, setPrinting] = useState(false);
-  useEffect(() => {
-    if (!printing) return;
-    const done = () => setPrinting(false);
-    window.addEventListener("afterprint", done, { once: true });
-    window.print();
-    return () => window.removeEventListener("afterprint", done);
-  }, [printing]);
-  return <><article className="settlement-receipt"><ReceiptContent receipt={receipt} />
-    <button className="receipt-print" onClick={() => setPrinting(true)}>Print receipt</button>
-  </article>{printing && createPortal(<div className="receipt-print-root"><article className="settlement-receipt"><ReceiptContent receipt={receipt} /></article></div>, document.body)}</>;
-}
-
 export function SettlementWorkspace({ admin, initialCode, onFinalized, onBack }: { admin: boolean; initialCode?: string; onFinalized?: () => void; onBack?: () => void }) {
   const [row, setRow] = useState<Appointment | null>(null); const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState("");

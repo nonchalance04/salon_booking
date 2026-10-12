@@ -4,6 +4,7 @@ export type NotificationMessage = {
   recipient: string;
   subject: string;
   text: string;
+  html?: string;
 };
 
 export interface NotificationProvider {

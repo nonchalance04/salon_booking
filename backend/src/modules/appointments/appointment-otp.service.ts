@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { renderEmailLayout } from "../notifications/email-layout.js";
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client.js";
 import { ApiError } from "../../shared/http.js";
@@ -59,6 +60,8 @@ export function createAppointmentOtpService(prisma: PrismaClient, secret: string
       if (result.recipient) {
         try {
           await sender.send({ id, channel, recipient: result.recipient, subject: "Appointment verification",
+            ...(channel === "EMAIL" ? { html: renderEmailLayout({ title: "Your verification code", verificationCode: code,
+              text: "Use this code to access your salon appointment. It expires in 5 minutes.\n\nDo not share this code." }) } : {}),
             text: `Your salon appointment access code is ${code}. It expires in 5 minutes. Do not share this code.` }, AbortSignal.timeout(10_000));
         } catch {
           await prisma.appointmentOtpChallenge.update({ where: { id }, data: { consumedAt: new Date() } });

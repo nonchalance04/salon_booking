@@ -35,7 +35,7 @@ export function createGmailProvider(
     const id = createHash("sha256").update(message.id).digest("hex");
     const content = await new MailComposer({
       from: { name: "", address: from }, to: [{ name: "", address: message.recipient }],
-      subject: message.subject, text: message.text,
+      subject: message.subject, text: message.text, html: message.html,
       messageId: `<${id}@${from.split("@")[1]}>`,
       disableFileAccess: true, disableUrlAccess: true,
     }).compile().build();

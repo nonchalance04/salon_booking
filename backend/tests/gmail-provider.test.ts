@@ -31,6 +31,14 @@ function fixture(connection = new FakeConnection(), timeoutMs = 1000) {
   const provider = createGmailProvider(user, password, user, timeoutMs, value => { options = value; calls++; return connection; });
   return { provider, connection, get options() { return options!; }, get calls() { return calls; } };
 }
+test("Gmail sends HTML with a plain-text alternative", async () => {
+  const f = fixture();
+  await f.provider.send({ ...message, html: "<h1>CLIQUE</h1><p>Booking confirmed</p>" }, new AbortController().signal);
+  assert.match(f.connection.content, /Content-Type: multipart\/alternative/);
+  assert.match(f.connection.content, /Content-Type: text\/plain; charset=utf-8/);
+  assert.match(f.connection.content, /Content-Type: text\/html; charset=utf-8/);
+  assert.match(f.connection.content, /<h1>CLIQUE<\/h1>/);
+});
 test("Gmail sends MIME text to one recipient over verified TLS and closes each connection", async () => {
   const f = fixture();
   await f.provider.send(message, new AbortController().signal);
