@@ -23,7 +23,7 @@ Generate a secret locally with `node -e "console.log(require('node:crypto').rand
 
 From `backend`, run `npm run db:migrate`, then `npm run build`. Deploy/restart the API and hold worker with the same configuration, and rebuild the frontend with `npm run build` in `frontend`. The migration creates only the OTP challenge, appointment session, and rate-limit tables. No existing appointment token is rotated.
 
-Use a customer-reachable `PUBLIC_SITE_URL` with no path, also present in `TRUSTED_ORIGINS`. With `NOTIFICATION_SMS_POLICY=minimal` (the default), the worker sends one combined fee-paid/booking-confirmed SMS containing the appointment time and a private link. Separate routine payment, completion and SMS reminder jobs become `SKIPPED`. Cancellation, rescheduling and financial-review notices remain available. Set `NOTIFICATION_SMS_PROVIDER=disabled` if the gateway should send OTPs only. OTP sends happen directly in the API and do not require the notification worker; routine notifications do.
+Use a customer-reachable `PUBLIC_SITE_URL` with no path, also present in `TRUSTED_ORIGINS`. With `NOTIFICATION_SMS_POLICY=minimal` (the default), the worker sends one combined fee-paid/booking-confirmed SMS containing the booking code and appointment date/time, without links. Separate routine payment, completion and SMS reminder jobs become `SKIPPED`. Cancellation, rescheduling and financial-review notices remain available. Set `NOTIFICATION_SMS_PROVIDER=disabled` if the gateway should send OTPs only. OTP sends happen directly in the API and do not require the notification worker; routine notifications do.
 
 ## Customer flow
 
@@ -49,9 +49,9 @@ For the full local setup and live acceptance procedure, including SMS channel se
 
 ## Minimal SMS policy
 
-Private links use `/a#<token>`; the fragment is removed after opening. The raw access token is derived using a purpose-specific HMAC with the backend JWT secret and notification identity. Only its hash is stored, scoped to one appointment, expiring 30 days after its scheduled end at issuance. Existing private links and OTP access remain supported. Customers normally reopen the SMS link without another code.
+Confirmation SMS contains fee-paid confirmation, the booking code and appointment date/time in the salon timezone, without links. Existing private links remain valid and OTP access remains supported. New confirmations do not create guest access sessions.
 
-The combined text is ASCII and limited to 160 characters. An excessively long public domain causes `SMS_LINK_TOO_LONG` rather than a split SMS. Configure a concise real domain. A missing public origin prevents the minimal-SMS worker from starting; an obsolete confirmation is skipped. Neither sends an unusable link.
+The combined text is ASCII and limited to 160 characters. Excessively long booking details cause `SMS_CONTENT_TOO_LONG` rather than a split SMS. No public origin or link secret is needed to render a confirmation. Obsolete confirmations are skipped.
 
 Minimal SMS sends are not automatically retried after provider errors or a reclaimed in-flight claim. This limits duplicate sends at the cost of requiring manual investigation if delivery is uncertain. Email retry behavior is unchanged. Skipped jobs retain their history; sent messages are never resent by changing policy. Setting `NOTIFICATION_SMS_POLICY=all` restores legacy behavior for future jobs, so keep `minimal` for reduced SMS use.
 
@@ -63,3 +63,11 @@ Email verification is also available on Your Appointment. Enable
 `APPOINTMENT_OTP_SECRET`; see EMAIL_SMS_SETUP.md section 12. Customers choose an
 enabled method. The booking cooldown, request budget, code invalidation and session
 behavior are shared across email and SMS.
+
+## One automatic SMS per booking
+
+Set `NOTIFICATION_SMS_POLICY=single` to send only the combined paid-booking confirmation. All other automatic SMS events, including changes and cancellations, are retained as `SKIPPED` with `SMS_SINGLE_POLICY`. Duplicate confirmations are skipped with `SMS_BOOKING_LIMIT` if another SMS for the same booking is sent, in-flight or failed. Claims serialize per booking to prevent concurrent workers sending duplicates. Failed or uncertain sends are not automatically retried. On-demand OTP requests and email remain separate. Restart the notification worker after changing this setting.
+
+## Link-free confirmations (2026-10-13)
+
+Confirmation SMS now contains only fee-paid confirmation, the booking code and appointment date/time in the salon timezone. No links are included and no guest session is created for a new confirmation. The worker no longer requires a public URL or booking-link secret to render SMS. Existing links and OTP access remain available. The one-SMS-per-booking policy is unchanged.

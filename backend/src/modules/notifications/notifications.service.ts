@@ -1,9 +1,7 @@
 import {
-  bookingLinkToken,
   confirmationSms,
   suppressRoutineSms,
 } from "./minimal-sms.js";
-import { tokenHash } from "../appointments/appointments.security.js";
 import {
   Prisma,
   type PrismaClient,
@@ -23,7 +21,7 @@ export type NotificationOptions = {
   maxAttempts: number;
   retryBaseMs: number;
   reminderHours: number;
-  smsPolicy?: "minimal" | "all";
+  smsPolicy?: "single" | "minimal" | "all";
   publicSiteUrl?: string;
   bookingLinkSecret?: string;
 };
@@ -47,15 +45,6 @@ export function createNotificationsService(
   )
     throw new Error("Invalid notification worker options.");
   const minimalSms = options.smsPolicy !== "all";
-  if (
-    minimalSms &&
-    options.providers.SMS &&
-    (!options.publicSiteUrl || !options.bookingLinkSecret)
-  ) {
-    throw new Error(
-      "Minimal SMS requires PUBLIC_SITE_URL and a booking-link secret before starting the worker.",
-    );
-  }
   const channels = Object.keys(options.providers).filter(
     (channel) => options.providers[channel as "EMAIL" | "SMS"],
   );
@@ -64,21 +53,40 @@ export function createNotificationsService(
     if (!channels.length) return null;
     // One SQL statement claims one job just before processing; no batch can expire
     // while waiting for earlier provider calls. PostgreSQL supplies the clock.
-    const rows = await db.$queryRaw<NotificationQueue[]>(Prisma.sql`
-      WITH candidate AS (
-        SELECT "id" FROM "NotificationQueue"
-        WHERE "channel"::text IN (${Prisma.join(channels)}) AND (
-          ("status" = 'PENDING' AND "scheduledAt" <= clock_timestamp()) OR
-          ("status" = 'PROCESSING' AND "updatedAt" <= clock_timestamp() - ${options.leaseMs} * interval '1 millisecond')
-        ) ORDER BY "scheduledAt", "id" FOR UPDATE SKIP LOCKED LIMIT 1
-      ) UPDATE "NotificationQueue" q SET
-        "status" = CASE WHEN q."attemptCount" >= ${options.maxAttempts} THEN 'FAILED'::"NotificationStatus" ELSE 'PROCESSING'::"NotificationStatus" END,
-        "attemptCount" = CASE WHEN q."attemptCount" >= ${options.maxAttempts} THEN q."attemptCount" ELSE q."attemptCount" + 1 END,
-        "lastError" = CASE WHEN q."attemptCount" >= ${options.maxAttempts} THEN 'ATTEMPTS_EXHAUSTED' ELSE q."lastError" END,
-        "updatedAt" = clock_timestamp()
-      FROM candidate WHERE q."id" = candidate."id" RETURNING q.*
-    `);
-    return rows[0] ?? null;
+    return db.$transaction(async tx => {
+      const rows = await tx.$queryRaw<NotificationQueue[]>(Prisma.sql`
+        WITH candidate AS (
+          SELECT "id" FROM "NotificationQueue"
+          WHERE "channel"::text IN (${Prisma.join(channels)}) AND (
+            ("status" = 'PENDING' AND "scheduledAt" <= clock_timestamp()) OR
+            ("status" = 'PROCESSING' AND "updatedAt" <= clock_timestamp() - ${options.leaseMs} * interval '1 millisecond')
+          ) ORDER BY "scheduledAt", "id" FOR UPDATE SKIP LOCKED LIMIT 1
+        ) UPDATE "NotificationQueue" q SET
+          "status" = CASE WHEN q."attemptCount" >= ${options.maxAttempts} THEN 'FAILED'::"NotificationStatus" ELSE 'PROCESSING'::"NotificationStatus" END,
+          "attemptCount" = CASE WHEN q."attemptCount" >= ${options.maxAttempts} THEN q."attemptCount" ELSE q."attemptCount" + 1 END,
+          "lastError" = CASE WHEN q."attemptCount" >= ${options.maxAttempts} THEN 'ATTEMPTS_EXHAUSTED' ELSE q."lastError" END,
+          "updatedAt" = clock_timestamp()
+        FROM candidate WHERE q."id" = candidate."id" RETURNING q.*
+      `);
+      const row = rows[0];
+      if (!row) return null;
+      if (options.smsPolicy === "single" && row.channel === "SMS" && row.status === "PROCESSING") {
+        let reason: string | undefined;
+        if (row.eventType !== "BOOKING_CONFIRMED" || !row.appointmentId) {
+          reason = "SMS_SINGLE_POLICY";
+        } else {
+          // Serialize claims for the same booking, even across worker processes.
+          await tx.$queryRaw`SELECT "id" FROM "Appointment" WHERE "id" = ${row.appointmentId}::uuid FOR UPDATE`;
+          const previous = await tx.notificationQueue.findFirst({ where: {
+            appointmentId: row.appointmentId, channel: "SMS", id: { not: row.id },
+            status: { in: ["SENT", "PROCESSING", "FAILED"] },
+          } });
+          if (previous) reason = "SMS_BOOKING_LIMIT";
+        }
+        if (reason) return tx.notificationQueue.update({ where: { id: row.id }, data: { status: "SKIPPED", lastError: reason } });
+      }
+      return row;
+    });
   }
 
   async function fail(row: NotificationQueue, error: unknown) {
@@ -181,26 +189,12 @@ export function createNotificationsService(
           await skip(row, "CONFIRMATION_PAYMENT_UNVERIFIED");
           return;
         }
-        if (!options.publicSiteUrl || !options.bookingLinkSecret)
-          throw new NotificationFailure("BOOKING_LINK_NOT_CONFIGURED", false);
-        const token = bookingLinkToken(options.bookingLinkSecret, row.id);
         message = confirmationSms(
           row,
           appointment.startAt,
           options.timeZone,
-          options.publicSiteUrl,
-          token,
+          appointment.bookingCode,
         );
-        // Durable hash only; retries derive the same token without storing it in the outbox.
-        await db.appointmentGuestSession.upsert({
-          where: { tokenHash: tokenHash(token) },
-          update: {},
-          create: {
-            tokenHash: tokenHash(token),
-            appointmentId: appointment.id,
-            expiresAt: new Date(+appointment.endAt + 30 * 86400_000),
-          },
-        });
       }
       if (row.eventType === "APPOINTMENT_REMINDER") {
         const p = notificationPayload.parse(row.payload);

@@ -1382,3 +1382,13 @@ A customer may regain access using the booking code and phone number already rec
 ## Minimal appointment SMS (2026-10-10)
 
 One normal paid booking sends one combined fee-payment/confirmation SMS with the appointment time and private access link. Routine standalone payment, completion and SMS reminder notices are suppressed at delivery with a retained SKIPPED record. OTP remains on-demand recovery. Schedule changes, cancellations and payments requiring reconciliation can generate separate exceptional notices. Email channel selection and delivery remain unchanged.
+
+
+## One automatic SMS per booking (2026-10-13)
+
+With `NOTIFICATION_SMS_POLICY=single`, only the combined paid-booking confirmation may send SMS. Changes, cancellations, recovery, financial-review, completion, payment and reminder notices are skipped. A prior sent, in-flight or failed SMS attempt for the booking prevents another automatic SMS; uncertain delivery is never retried automatically. Explicit customer requests for OTP verification remain separate. Email behavior is unchanged.
+
+
+## Simple booking confirmation SMS (2026-10-13)
+
+Booking confirmation SMS contains fee-paid confirmation, the booking code, and appointment date/time in the salon timezone. It contains no links and creates no new guest access session. Existing links and on-demand OTP access remain valid.

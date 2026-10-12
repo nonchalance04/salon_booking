@@ -198,8 +198,6 @@ test("reminder pagination progresses past existing rows", async () => {
 });
 
 test("minimal SMS sends one combined confirmation and skips old separate notifications", async () => {
-  const { validGuestAccess, tokenHash } = await import("../../src/modules/appointments/appointments.security.js");
-  const { bookingLinkToken } = await import("../../src/modules/notifications/minimal-sms.js");
   const booking = await appointment({}, null);
   await prisma.payment.create({ data: { appointmentId: booking.id, type: "APPOINTMENT_FEE", status: "SUCCEEDED", satisfiesObligation: true, amount: "100.00", method: "CASH", provider: "manual", idempotencyKey: randomUUID(), externalReference: randomUUID(), paidAt: new Date() } });
   const confirmation = await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
@@ -211,11 +209,9 @@ test("minimal SMS sends one combined confirmation and skips old separate notific
   assert.equal(messages.length, 1); assert.match(messages[0]!.text, /Fee paid.*Confirmed/);
   assert.equal((await stored(confirmation.id)).status, "SENT");
   for (const row of others) { assert.equal((await stored(row.id)).status, "SKIPPED"); assert.equal((await stored(row.id)).lastError, "SMS_MINIMAL_POLICY"); }
-  const token = bookingLinkToken("s".repeat(32), confirmation.id);
-  assert.equal(await validGuestAccess(prisma, token, booking), true);
-  const other = await appointment(); assert.equal(await validGuestAccess(prisma, token, other), false);
-  assert.ok(await prisma.appointmentGuestSession.findUnique({ where: { tokenHash: tokenHash(token) } }));
-  assert.equal(JSON.stringify((await stored(confirmation.id)).payload).includes(token), false);
+  assert.ok(messages[0]!.text.includes(booking.bookingCode));
+  assert.doesNotMatch(messages[0]!.text, /https?:|Private link/);
+  assert.equal(await prisma.appointmentGuestSession.count({ where: { appointmentId: booking.id } }), 0);
 });
 
 test("minimal policy generates no separate reminders and preserves SMS cancellation notices", async () => {
@@ -285,4 +281,37 @@ test("email payment notices without a matching confirmation and reconciliation e
   assert.equal((await stored(standalone.id)).status, "SENT");
   assert.equal((await stored(review.id)).status, "SENT");
   assert.match(messages.find(m => m.id === review.id)!.text, /does not confirm/);
+});
+
+test("single policy allows one confirmation across concurrent workers and suppresses later events", async () => {
+  const booking = await appointment({}, null);
+  await prisma.payment.create({ data: { appointmentId: booking.id, type: "APPOINTMENT_FEE", status: "SUCCEEDED", satisfiesObligation: true, amount: "100.00", method: "CASH", provider: "manual", idempotencyKey: randomUUID(), externalReference: randomUUID(), paidAt: new Date() } });
+  const messages: NotificationMessage[] = [];
+  const worker = service(createTestNotificationProvider(m => messages.push(m)), { smsPolicy: "single", publicSiteUrl: undefined, bookingLinkSecret: undefined });
+  for (let i = 0; i < 3; i++) await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
+  await Promise.all(Array.from({ length: 3 }, () => worker.processNext()));
+  assert.equal(messages.length, 1);
+  assert.equal(await prisma.notificationQueue.count({ where: { status: "SKIPPED", lastError: "SMS_BOOKING_LIMIT" } }), 2);
+  for (const eventType of ["BOOKING_RESCHEDULED", "BOOKING_CANCELLED", "NO_SHOW_RECOVERY_CREATED", "PAYMENT_RECEIVED", "APPOINTMENT_COMPLETED", "APPOINTMENT_REMINDER"]) {
+    const row = await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567", eventType });
+    await worker.processNext();
+    assert.equal((await stored(row.id)).lastError, "SMS_SINGLE_POLICY");
+  }
+  const duplicate = await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
+  await worker.processNext();
+  assert.equal((await stored(duplicate.id)).lastError, "SMS_BOOKING_LIMIT");
+  const email = await queue({ appointmentId: booking.id });
+  await worker.processNext();
+  assert.equal((await stored(email.id)).status, "SENT");
+  assert.equal(messages.filter(m => m.channel === "SMS").length, 1);
+});
+
+test("single policy does not send another SMS after a prior failed attempt", async () => {
+  const booking = await appointment({}, null);
+  await queue({ appointmentId: booking.id, channel: "SMS", status: "FAILED", lastError: "PROVIDER_TIMEOUT", attemptCount: 1 });
+  const duplicate = await queue({ appointmentId: booking.id, channel: "SMS" });
+  let calls = 0;
+  await service(createTestNotificationProvider(() => { calls++; }), { smsPolicy: "single" }).processNext();
+  assert.equal(calls, 0);
+  assert.equal((await stored(duplicate.id)).lastError, "SMS_BOOKING_LIMIT");
 });

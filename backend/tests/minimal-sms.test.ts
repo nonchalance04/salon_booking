@@ -1,18 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bookingLinkToken, confirmationSms, suppressRoutineSms } from "../src/modules/notifications/minimal-sms.js";
+import { confirmationSms, suppressRoutineSms } from "../src/modules/notifications/minimal-sms.js";
 import { parseEnv } from "../src/config/env.schema.js";
-test("combined confirmation is ASCII, one segment, and contains a stable private link", () => {
-  const token = bookingLinkToken("s".repeat(32), "queue-id");
-  assert.equal(token.length, 43);
-  assert.equal(token, bookingLinkToken("s".repeat(32), "queue-id"));
-  assert.notEqual(token, bookingLinkToken("s".repeat(32), "other-id"));
-  const message = confirmationSms({ id: "queue-id", recipient: "09171234567" }, new Date("2026-10-15T06:00:00Z"), "Asia/Manila", "https://salon.example.com", token);
-  assert.ok(message.text.length <= 160, message.text);
-  assert.match(message.text, /Fee paid.*Confirmed.*Oct 15.*2:00 PM/);
-  assert.ok(message.text.includes(`https://salon.example.com/a#${token}`));
+test("confirmation contains simple booking details in one SMS without links", () => {
+  const message = confirmationSms({ id: "queue-id", recipient: "09171234567" }, new Date("2026-10-15T06:00:00Z"), "Asia/Manila", "BOOK-123");
+  assert.equal(message.text, "CLIQUE: Fee paid. Confirmed Oct 15, 2026, 2:00 PM (salon time). Booking: BOOK-123.");
+  assert.ok(message.text.length <= 160);
   assert.match(message.text, /^[\x20-\x7E]+$/);
-  assert.throws(() => confirmationSms({ id: "id", recipient: "09171234567" }, new Date(), "Asia/Manila", `https://${"a".repeat(100)}.test`, token), /SMS_LINK_TOO_LONG/);
+  assert.doesNotMatch(message.text, /https?:|Private link|#/);
+  assert.throws(() => confirmationSms({ id: "id", recipient: "09171234567" }, new Date(), "Asia/Manila", "A".repeat(160)), /SMS_CONTENT_TOO_LONG/);
 });
 test("minimal policy suppresses routine SMS while keeping changes, exceptions and email", () => {
   for (const eventType of ["PAYMENT_RECEIVED", "APPOINTMENT_COMPLETED", "APPOINTMENT_REMINDER"] as const) {

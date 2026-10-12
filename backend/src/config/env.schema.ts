@@ -26,7 +26,7 @@ export const envSchema = z.object({
   NOTIFICATION_EMAIL_FROM: z.preprocess(v => v === "" ? undefined : v, z.email().optional()),
   PHILSMS_API_TOKEN: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).regex(/^\S+$/).optional()),
   PHILSMS_SENDER_ID: z.preprocess(v => v === "" ? undefined : v, z.string().trim().min(1).max(11).regex(/^[A-Za-z0-9 ]+$/).optional()),
-  NOTIFICATION_SMS_POLICY: z.enum(["minimal", "all"]).default("minimal"),
+  NOTIFICATION_SMS_POLICY: z.enum(["single", "minimal", "all"]).default("minimal"),
   PUBLIC_SITE_URL: z.preprocess(v => v === "" ? undefined : v, z.url().optional()),
   NOTIFICATION_LEASE_MS: z.coerce.number().int().min(5000).max(600000).default(60000),
   NOTIFICATION_TIMEOUT_MS: z.coerce.number().int().min(1000).max(20000).default(10000),
