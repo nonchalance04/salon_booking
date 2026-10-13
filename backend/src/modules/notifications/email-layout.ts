@@ -1,7 +1,15 @@
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, character => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]!);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character]!,
+  );
 }
 
 /** Inline styles and presentation tables keep the website's look in mail clients. */
@@ -13,10 +21,22 @@ export function renderEmailLayout(options: {
   verificationCode?: string;
 }): string {
   const { title, text, bookingCode, when, verificationCode } = options;
-  const detail = (label: string, value: string) => `<tr><td style="padding:0 0 6px;font-size:11px;font-weight:700;letter-spacing:1.5px;color:#73756f;text-transform:uppercase;">${label}</td></tr><tr><td style="padding:0 0 20px;font-size:17px;font-weight:700;line-height:1.5;overflow-wrap:anywhere;">${escapeHtml(value)}</td></tr>`;
-  const details = bookingCode || when ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;background:#f3f3f1;border:1px solid #ddddd7;border-radius:16px;"><tr><td style="padding:22px 22px 2px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${bookingCode ? detail("Booking reference", bookingCode) : ""}${when ? detail("Appointment time", when) : ""}</table></td></tr></table>` : "";
-  const code = verificationCode ? `<div style="margin-top:24px;padding:24px 12px;text-align:center;background:#f3f3f1;border:1px solid #ddddd7;border-radius:16px;"><p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:1.5px;color:#73756f;">YOUR VERIFICATION CODE</p><p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:36px;line-height:1.3;font-weight:700;letter-spacing:6px;color:#292a28;">${escapeHtml(verificationCode)}</p></div>` : "";
-  const paragraphs = text.split(/\n\n+/).map(paragraph => `<p style="margin:0 0 16px;font-size:15px;line-height:1.75;color:#5e6059;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`).join("");
+  const detail = (label: string, value: string) =>
+    `<tr><td style="padding:0 0 6px;font-size:11px;font-weight:700;letter-spacing:1.5px;color:#73756f;text-transform:uppercase;">${label}</td></tr><tr><td style="padding:0 0 20px;font-size:17px;font-weight:700;line-height:1.5;overflow-wrap:anywhere;">${escapeHtml(value)}</td></tr>`;
+  const details =
+    bookingCode || when
+      ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;background:#f3f3f1;border:1px solid #ddddd7;border-radius:16px;"><tr><td style="padding:22px 22px 2px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${bookingCode ? detail("Booking reference", bookingCode) : ""}${when ? detail("Appointment time", when) : ""}</table></td></tr></table>`
+      : "";
+  const code = verificationCode
+    ? `<div style="margin-top:24px;padding:24px 12px;text-align:center;background:#f3f3f1;border:1px solid #ddddd7;border-radius:16px;"><p style="margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:1.5px;color:#73756f;">YOUR VERIFICATION CODE</p><p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:36px;line-height:1.3;font-weight:700;letter-spacing:6px;color:#292a28;">${escapeHtml(verificationCode)}</p></div>`
+    : "";
+  const paragraphs = text
+    .split(/\n\n+/)
+    .map(
+      (paragraph) =>
+        `<p style="margin:0 0 16px;font-size:15px;line-height:1.75;color:#5e6059;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+    )
+    .join("");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><meta name="color-scheme" content="light" /><title>${escapeHtml(title)} | Clique Salon</title>
 <style>@media only screen and (max-width:480px){.email-shell{padding:24px 12px!important}.email-content{padding:28px 22px!important}.email-title{font-size:28px!important}}</style></head>

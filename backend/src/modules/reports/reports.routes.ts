@@ -12,6 +12,7 @@ export function createReportsRouter(prisma: PrismaClient, config: AuthConfig) {
   router.use("/reports", browserSecurity(config.TRUSTED_ORIGINS), auth.authenticate);
   router.get("/reports/collections", validateRequest(z.object({ query: reportQuery })), async (_req, res) => res.json(await service.collections(res.locals.user.id, res.locals.validated.query)));
   router.get("/reports/cashier-queue", validateRequest(z.object({ query: reportQuery })), async (_req, res) => res.json(await service.cashierQueue(res.locals.user.id, res.locals.validated.query)));
+  router.get("/reports/waiting-queue", validateRequest(z.object({ query: confirmedServicesQuery })), async (_req, res) => res.json(await service.waitingQueue(res.locals.user.id, res.locals.validated.query)));
   router.get("/reports/confirmed-services", validateRequest(z.object({ query: confirmedServicesQuery })), async (_req, res) => res.json(await service.confirmedServices(res.locals.user.id, res.locals.validated.query)));
   router.get("/reports/dashboard", auth.adminOnly, validateRequest(z.object({ query: reportQuery })), async (_req, res) => res.json(await service.dashboard(res.locals.user.id, res.locals.validated.query)));
   router.get("/reports/:kind", auth.adminOnly, validateRequest(z.object({ params: z.object({ kind: z.enum(reportKinds) }), query: reportQuery })), async (_req, res) => res.json(await service.list(res.locals.user.id, res.locals.validated.params.kind, res.locals.validated.query)));

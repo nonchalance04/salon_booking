@@ -18,6 +18,7 @@ export const profileSchema = z.object({
 }).strict();
 export const serviceSchema = z.object({
   name: text, description: optionalText, price: positiveMoney,
+  category: z.string().trim().min(1).max(100).optional(),
   durationMinutes: integer.min(1), bufferMinutes: integer.nullable(), isActive: z.boolean(),
 }).strict();
 export const staffSchema = z.object({ firstName: text, lastName: text, phone: z.string().trim().max(50).nullable(), isActive: z.boolean() }).strict();
@@ -25,6 +26,11 @@ export const qualificationSchema = z.object({
   staffId: z.uuid(), serviceId: z.uuid(), isActive: z.boolean(),
   commissionRate: z.string().regex(/^(0(\.\d{1,4})?|1(\.0{1,4})?)$/),
 }).strict();
+export const staffSkillsSchema = z.object({
+  services: z.array(qualificationSchema.pick({ serviceId: true, commissionRate: true })).max(500),
+}).strict().refine(input => new Set(input.services.map(row => row.serviceId)).size === input.services.length,
+  "Select each service only once.");
+export type StaffSkillsInput = z.infer<typeof staffSkillsSchema>;
 export const hoursSchema = z.object({ dayOfWeek: z.enum(days), openTime: time, closeTime: time, isActive: z.boolean() }).strict()
   .refine(v => v.openTime.padEnd(8, ":00") < v.closeTime.padEnd(8, ":00"), "Opening must precede closing.");
 export const scheduleSchema = z.object({

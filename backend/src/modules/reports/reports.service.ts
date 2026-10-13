@@ -1,3 +1,4 @@
+import { freshTime } from "../scheduling/coordination.js";
 import { Prisma, type PrismaClient } from "../../../generated/prisma/client.js";
 import { Temporal } from "@js-temporal/polyfill";
 import { ApiError } from "../../shared/http.js";
@@ -55,6 +56,43 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
         };
       });
     },
+    waitingQueue(actorId: string, q: ConfirmedServicesQuery) {
+      return read(actorId, false, async tx => {
+        const now = await freshTime(tx);
+        const where: Prisma.AppointmentWhereInput = {
+          status: "CONFIRMED", checkedInAt: { not: null }, completedAt: null, completionType: null,
+          appointmentServices: {
+            some: { membershipStatus: "ACTIVE" },
+            none: { membershipStatus: "ACTIVE", OR: [
+              { outcome: { not: "SCHEDULED" } }, { outcomeFinalizedAt: { not: null } },
+            ] },
+          },
+          ...(q.search ? { OR: [
+            { bookingCode: { contains: q.search, mode: "insensitive" } },
+            { AND: q.search.split(/\s+/).map(word => ({ OR: [
+              { customer: { firstName: { contains: word, mode: "insensitive" as const } } },
+              { customer: { lastName: { contains: word, mode: "insensitive" as const } } },
+            ] })) },
+          ] } : {}),
+        };
+        const total = await tx.appointment.count({ where });
+        const rows = await tx.appointment.findMany({ where, skip: (q.page - 1) * q.pageSize, take: q.pageSize,
+          orderBy: [{ checkedInAt: "asc" }, { id: "asc" }], select: {
+            bookingCode: true, startAt: true, endAt: true, checkedInAt: true,
+            checkedInByUser: { select: { firstName: true, lastName: true } },
+            customer: { select: { firstName: true, lastName: true } },
+            appointmentServices: { where: { membershipStatus: "ACTIVE" }, orderBy: { sequenceNo: "asc" }, select: {
+              id: true, serviceNameSnapshot: true, staff: { select: { firstName: true, lastName: true } },
+            } },
+          } });
+        return { timeZone, serverTime: now.toISOString(), page: q.page, pageSize: q.pageSize, total,
+          rows: rows.map(row => ({ ...row,
+            minutesSinceCheckIn: Math.max(0, Math.floor((+now - +row.checkedInAt!) / 60_000)),
+            needsReview: row.endAt <= now,
+          })) };
+      });
+    },
+
     confirmedServices(actorId: string, q: ConfirmedServicesQuery) {
       return read(actorId, false, async tx => {
         const where: Prisma.AppointmentWhereInput = {
@@ -70,7 +108,8 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
         const total = await tx.appointment.count({ where });
         const rows = await tx.appointment.findMany({ where, skip: (q.page - 1) * q.pageSize, take: q.pageSize,
           orderBy: [{ startAt: "asc" }, { id: "asc" }], select: {
-            bookingCode: true, startAt: true,
+            bookingCode: true, startAt: true, checkedInAt: true,
+            checkedInByUser: { select: { firstName: true, lastName: true } },
             customer: { select: { firstName: true, lastName: true } },
             appointmentServices: { where: { membershipStatus: "ACTIVE" }, orderBy: { sequenceNo: "asc" }, select: {
               id: true, serviceNameSnapshot: true, priceSnapshot: true, outcome: true,
@@ -88,7 +127,8 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
         const total = counts.reduce((n, r) => n + r._count._all, 0);
         const rows = await tx.appointment.findMany({ where, skip: (q.page - 1) * q.pageSize, take: q.pageSize,
           orderBy: [{ status: "asc" }, { startAt: "asc" }, { id: "asc" }], select: {
-            bookingCode: true, startAt: true, status: true, completionType: true,
+            bookingCode: true, startAt: true, checkedInAt: true,
+            checkedInByUser: { select: { firstName: true, lastName: true } }, status: true, completionType: true,
             customer: { select: { firstName: true, lastName: true } },
             appointmentServices: { where: { membershipStatus: "ACTIVE" }, orderBy: { sequenceNo: "asc" }, select: {
               serviceNameSnapshot: true, outcome: true, staff: { select: { firstName: true, lastName: true } },

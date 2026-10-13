@@ -1,4 +1,5 @@
 import { StaffProfileEditor } from "./staff-profile-editor";
+import { StaffSkillsEditor } from "./staff-skills-editor";
 import type { StaffPublicProfile } from "./staff-profile";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Temporal } from "@js-temporal/polyfill";
@@ -15,6 +16,7 @@ export function Configuration({ initialSection = "profile", onReviewBooking }: {
   const [section, setSection] = useState<Section>(initialSection);
   const [edit, setEdit] = useState<{ id?: string; values: Record<string, string | boolean> } | null>(null);
   const [profileStaff, setProfileStaff] = useState<Row | null>(null);
+  const [skillsStaff, setSkillsStaff] = useState<Row | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -44,6 +46,7 @@ export function Configuration({ initialSection = "profile", onReviewBooking }: {
   }
   function open(row?: Row) {
     setProfileStaff(null);
+    setSkillsStaff(null);
     const source = section === "policies" ? data?.policies.find(p => new Date(String(p.effectiveFrom)) <= new Date()) : row;
     const values: Record<string, string | boolean> = {};
     for (const field of definition.fields) {
@@ -90,13 +93,19 @@ export function Configuration({ initialSection = "profile", onReviewBooking }: {
   }
   const rows = data ? section === "profile" ? data.profile ? [data.profile] : [] : data[section] : [];
   return <section aria-label="Salon configuration" className="configuration">
-    <nav className="config-tabs" aria-label="Configuration sections">{(Object.keys(definitions) as Section[]).map(key => <button key={key} disabled={busy} aria-current={section === key ? "page" : undefined} onClick={() => { setSection(key); setEdit(null); setProfileStaff(null); setError(""); setNotice(""); setConflicts([]); }}>{definitions[key].title}</button>)}</nav>
+    <nav className="config-tabs" aria-label="Configuration sections">{(Object.keys(definitions) as Section[]).map(key => <button key={key} disabled={busy} aria-current={section === key ? "page" : undefined} onClick={() => { setSection(key); setEdit(null); setProfileStaff(null); setSkillsStaff(null); setError(""); setNotice(""); setConflicts([]); }}>{definitions[key].title}</button>)}</nav>
     <div className="section-heading"><div><p className="eyebrow">SALON MANAGEMENT</p><h2>{definition.title}</h2><p className="muted">{definition.description}</p></div>
       {data && <button className="primary" disabled={busy} onClick={() => open(section === "profile" ? data.profile ?? undefined : undefined)}>{section === "profile" ? "Edit profile" : `+ Add ${definition.singular}`}</button>}</div>
     {data && <p className="timezone-note">All dates and times use {data.timeZone}.</p>}
     {error && <div ref={errorPanel} role="alert" className="error"><p>{error}</p>{conflicts.length > 0 && <ul>{conflicts.map(c => <li key={c.appointmentServiceId}><strong>{c.bookingCode}</strong> {onReviewBooking && <button type="button" onClick={() => onReviewBooking(c.bookingCode)}>Review booking</button>} · {dateTime(c.startAt)} – {dateTime(c.reservedUntilAt)}</li>)}</ul>}{!data && <button onClick={() => void load().catch(fail)}>Retry</button>}</div>}
     {notice && <p role="status" className="success">{notice}</p>}
     {!data && !error && <p role="status">Loading configuration…</p>}
+    {skillsStaff && data && <StaffSkillsEditor key={skillsStaff.id} staffId={skillsStaff.id} name={staffName(skillsStaff.id)} busy={busy} onBusy={setBusy}
+      services={data.services.map(row => ({ id: row.id, name: String(row.name), category: String(row.category ?? "Other"), isActive: Boolean(row.isActive) }))}
+      qualifications={data.qualifications.filter(row => row.staffId === skillsStaff.id).map(row => ({ serviceId: String(row.serviceId), commissionRate: String(row.commissionRate), isActive: Boolean(row.isActive) }))}
+      onError={fail} onClose={() => { setSkillsStaff(null); setError(""); setConflicts([]); }} onSaved={async () => {
+        await load(); setSkillsStaff(null); setError(""); setConflicts([]); setNotice("Staff skills saved. Booking eligibility now follows the selected services.");
+      }} />}
     {profileStaff && <StaffProfileEditor key={profileStaff.id} staffId={profileStaff.id} name={staffName(profileStaff.id)} initial={profileStaff.publicProfile as StaffPublicProfile | null} busy={busy} onBusy={setBusy} onClose={() => setProfileStaff(null)} onSaved={profile => {
       setData(current => current ? { ...current, staff: current.staff.map(row => row.id === profileStaff.id ? { ...row, publicProfile: profile } : row) } : current);
       setProfileStaff(null); setNotice("Public profile saved. Customers will see it when they load the booking page.");
@@ -120,8 +129,12 @@ export function Configuration({ initialSection = "profile", onReviewBooking }: {
     </div><div className="actions"><button className="primary" disabled={busy}>{busy ? "Saving…" : section === "policies" ? "Publish policy version" : "Save changes"}</button><button type="button" disabled={busy} onClick={() => setEdit(null)}>Cancel</button></div></form>}
     {data && (rows.length === 0 ? <p className="empty-state">No {definition.title.toLowerCase()} configured yet.</p> : <div className="config-records">{rows.map(row => <article className="config-record" key={row.id}>
       <div className="record-heading"><h3>{section === "policies" ? `Version ${row.version}` : section === "staff" ? `${row.firstName} ${row.lastName}` : section === "qualifications" ? `${staffName(row.staffId)} · ${serviceName(row.serviceId)}` : section === "schedules" || section === "unavailability" ? staffName(row.staffId) : String(row.name ?? (row.dayOfWeek ? titleCase(String(row.dayOfWeek)) : definition.singular))}</h3>
-        {section !== "policies" && <div className="actions"><button disabled={busy} onClick={() => open(row)}>Edit</button>{section === "staff" && <button disabled={busy} onClick={() => { setEdit(null); setNotice(""); setError(""); setProfileStaff(row); }}>Edit public profile</button>}{["closures", "unavailability"].includes(section) && <button disabled={busy} onClick={() => void remove(row.id)}>Remove period</button>}</div>}</div>
+        {section !== "policies" && <div className="actions"><button disabled={busy} onClick={() => open(row)}>Edit</button>{section === "staff" && <><button disabled={busy} onClick={() => { setEdit(null); setProfileStaff(null); setNotice(""); setError(""); setConflicts([]); setSkillsStaff(row); }}>Manage skills</button><button disabled={busy} onClick={() => { setEdit(null); setSkillsStaff(null); setNotice(""); setError(""); setConflicts([]); setProfileStaff(row); }}>Edit public profile</button></>}{["closures", "unavailability"].includes(section) && <button disabled={busy} onClick={() => void remove(row.id)}>Remove period</button>}</div>}</div>
       <dl>{definition.fields.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{display(field, row[field.key])}</dd></div>)}</dl>
+      {section === "staff" && <div className="staff-skill-summary"><strong>Qualified services</strong><p>{data.qualifications.filter(q => q.staffId === row.id && q.isActive && data.services.some(s => s.id === q.serviceId && s.isActive)).map(q => {
+        const service = data.services.find(s => s.id === q.serviceId)!;
+        return `${service.name} (${service.category ?? "Other"})`;
+      }).join(", ") || "No active services assigned. Use Manage skills to enable booking."}</p></div>}
     </article>)}</div>)}
   </section>;
 }

@@ -1,3 +1,5 @@
+import { coversReservation, overlaps } from "../scheduling/coverage.js";
+import { noShowCorrectionSchema, type NoShowCorrectionInput } from "./appointments.schema.js";
 import {
   Prisma,
   type PrismaClient,
@@ -124,6 +126,7 @@ export function validateChangeEligibility(
  */
 function pristine(row: Row) {
   if (
+    row.checkedInAt ||
     row.completedAt ||
     row.appointmentServices.some(
       (s) =>
@@ -132,9 +135,22 @@ function pristine(row: Row) {
     )
   ) {
     throw conflict(
-      "Service outcomes have already been recorded. Please contact the salon.",
+      "The customer has checked in or service outcomes have already been recorded. Please contact the salon.",
     );
   }
+}
+
+export const NO_SHOW_ARRIVAL_GRACE_MS = 15 * 60_000;
+
+export function eligibleForAutomaticNoShow(row: {
+  status: string; startAt: Date; checkedInAt: Date | null; completedAt: Date | null;
+  completionType: string | null;
+  appointmentServices: { membershipStatus: string; outcome: string; outcomeFinalizedAt: Date | null }[];
+}, now: Date) {
+  return row.status === "CONFIRMED" && !row.checkedInAt && !row.completedAt && !row.completionType &&
+    +now >= +row.startAt + NO_SHOW_ARRIVAL_GRACE_MS &&
+    !row.appointmentServices.some(s => s.membershipStatus === "ACTIVE" &&
+      (s.outcome !== "SCHEDULED" || s.outcomeFinalizedAt));
 }
 
 /**
@@ -713,6 +729,114 @@ export function createAppointmentChangesService(
       });
     },
 
+    async markOverdueNoShows(limit = 100) {
+      // Filter protected visits before limiting so they cannot starve eligible bookings.
+      const candidates = await prisma.$queryRaw<{ bookingCode: string }[]>`
+        SELECT a."bookingCode" FROM "Appointment" a
+        WHERE a.status = 'CONFIRMED' AND a."checkedInAt" IS NULL
+          AND a."completedAt" IS NULL AND a."completionType" IS NULL
+          AND a."startAt" <= clock_timestamp() - ${NO_SHOW_ARRIVAL_GRACE_MS} * interval '1 millisecond'
+          AND NOT EXISTS (
+            SELECT 1 FROM "AppointmentService" s
+            WHERE s."appointmentId" = a.id AND s."membershipStatus" = 'ACTIVE'
+              AND (s.outcome <> 'SCHEDULED' OR s."outcomeFinalizedAt" IS NOT NULL)
+          )
+        ORDER BY a."startAt", a.id LIMIT ${limit}
+      `;
+      let marked = 0;
+      for (const candidate of candidates) {
+        marked += await reservationTransaction(prisma, async tx => {
+          // Same staff/appointment locks as check-in, settlement and manual changes.
+          const { row } = await lockAppointment(tx, candidate.bookingCode);
+          const now = await freshTime(tx);
+          if (!eligibleForAutomaticNoShow(row, now)) return 0;
+          await tx.appointment.update({ where: { id: row.id }, data: {
+            status: "NO_SHOW", noShowAt: now,
+            noShowGraceExpiresAt: new Date(+row.startAt + row.bookingPolicyVersion.noShowGraceHours * 3_600_000),
+          } });
+          await tx.auditLog.create({ data: {
+            actorType: "SYSTEM", action: "BOOKING_NO_SHOW", entityType: "Appointment", entityId: row.id,
+            beforeData: { status: "CONFIRMED" },
+            afterData: { status: "NO_SHOW", reason: "ARRIVAL_GRACE_EXPIRED" },
+          } });
+          return 1;
+        });
+      }
+      return marked;
+    },
+
+    async correctNoShow(actorId: string, raw: NoShowCorrectionInput) {
+      const input = noShowCorrectionSchema.parse(raw);
+      return reservationTransaction(prisma, async tx => {
+        await admin(tx, actorId);
+        const { row } = await lockAppointment(tx, input.bookingCode);
+        const now = await freshTime(tx);
+        if (row.status !== "NO_SHOW" || row.recoveryAppointment || row.completionType)
+          throw conflict("Only an unresolved no-show without a replacement booking can be corrected.");
+        pristine(row);
+        const date = Temporal.Instant.fromEpochMilliseconds(+row.startAt).toZonedDateTimeISO(timeZone).toPlainDate().toString();
+        const today = Temporal.Instant.fromEpochMilliseconds(+now).toZonedDateTimeISO(timeZone).toPlainDate().toString();
+        if (date !== today || row.endAt <= now)
+          throw conflict("The original visit has ended or is on another salon date. Arrange a new available booking instead.");
+        const services = row.appointmentServices.filter(s => s.membershipStatus === "ACTIVE");
+        if (!services.length) throw conflict("This appointment has no active services to restore.");
+        const data = await loadAvailabilityData(tx, { date, services: services.map(s => ({
+          serviceId: s.serviceId, assignmentMode: "SPECIFIC" as const, staffId: s.staffId,
+        })) }, timeZone, now, row.bookingPolicyVersion, {
+          retainedServiceIds: services.map(s => s.serviceId), excludeAppointmentId: row.id,
+        });
+        for (const service of services) {
+          const start = service.scheduledStartAt, end = service.reservedUntilAt;
+          if (!data.staff.some(s => s.id === service.staffId) ||
+              !data.qualifications.some(q => q.staffId === service.staffId && q.serviceId === service.serviceId) ||
+              !coversReservation(start, end, data.hours, timeZone) ||
+              !coversReservation(start, end, data.schedules.filter(s => s.staffId === service.staffId), timeZone) ||
+              data.closures.some(c => overlaps(start, end, c.startsAt, c.endsAt)) ||
+              data.unavailability.some(u => u.staffId === service.staffId && overlaps(start, end, u.startsAt, u.endsAt)) ||
+              data.reservations.some(r => r.staffId === service.staffId && overlaps(start, end, r.scheduledStartAt, r.reservedUntilAt)))
+            throw conflict("The original staff time is no longer available. Arrange a new available booking instead.");
+        }
+        const checkedInAt = await freshTime(tx);
+        if (row.endAt <= checkedInAt) throw conflict("The original visit has ended. Arrange a new available booking instead.");
+        await tx.appointment.update({ where: { id: row.id }, data: {
+          status: "CONFIRMED", checkedInAt, checkedInByUserId: actorId,
+          noShowAt: null, noShowGraceExpiresAt: null,
+        } });
+        await tx.auditLog.create({ data: {
+          actorType: "ADMIN", actorUserId: actorId, action: "BOOKING_NO_SHOW_CORRECTED", entityType: "Appointment", entityId: row.id,
+          beforeData: { status: "NO_SHOW", noShowAt: row.noShowAt?.toISOString() ?? null,
+            noShowGraceExpiresAt: row.noShowGraceExpiresAt?.toISOString() ?? null, checkedInAt: null },
+          afterData: { status: "CONFIRMED", checkedInAt: checkedInAt.toISOString(), checkedInByUserId: actorId, reason: input.reason },
+        } });
+        return { corrected: true, checkedInAt };
+      });
+    },
+
+    async checkIn(actorId: string, bookingCode: string) {
+      return reservationTransaction(prisma, async tx => {
+        // Authorize under a lock so a concurrent account deactivation cannot race arrival recording.
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${actorId}::uuid FOR SHARE`;
+        const actor = await tx.user.findUnique({ where: { id: actorId } });
+        if (!actor?.isActive) throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
+        if (actor.role !== "ADMIN" && actor.role !== "CASHIER")
+          throw new ApiError(403, "FORBIDDEN", "Cashier or administrator access is required.");
+        const { row } = await lockAppointment(tx, bookingCode);
+        if (row.status !== "CONFIRMED" || row.completedAt)
+          throw conflict("Only a confirmed, uncompleted appointment can be checked in.");
+        if (row.checkedInAt) return { checkedInAt: row.checkedInAt, checkedInByUserId: row.checkedInByUserId };
+        const now = await freshTime(tx);
+        const date = (value: Date) => Temporal.Instant.fromEpochMilliseconds(+value).toZonedDateTimeISO(timeZone).toPlainDate().toString();
+        if (date(now) !== date(row.startAt)) throw conflict("Check-in is available only on the scheduled salon date.");
+        pristine(row);
+        await tx.appointment.update({ where: { id: row.id }, data: { checkedInAt: now, checkedInByUserId: actorId } });
+        await tx.auditLog.create({ data: {
+          actorType: actor.role, actorUserId: actorId, action: "BOOKING_CHECKED_IN", entityType: "Appointment", entityId: row.id,
+          beforeData: { checkedInAt: null }, afterData: { checkedInAt: now.toISOString(), checkedInByUserId: actorId },
+        } });
+        return { checkedInAt: now, checkedInByUserId: actorId };
+      });
+    },
+
     /**
      * Marks an appointment as a no-show. Restricted to administrator users.
      *
@@ -888,7 +1012,7 @@ export function createAppointmentChangesService(
           take: 51,
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
           orderBy: { id: "asc" },
-          select: { ...guestSelect, id: true },
+          select: { ...guestSelect, id: true, checkedInByUser: { select: { firstName: true, lastName: true } } },
         });
 
         return {

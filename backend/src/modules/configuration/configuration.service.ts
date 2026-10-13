@@ -2,7 +2,7 @@ import { Prisma, type PrismaClient } from "../../../generated/prisma/client.js";
 import { ApiError } from "../../shared/http.js";
 import { lockSalon, lockStaff, freshTime } from "../scheduling/coordination.js";
 import { coversReservation, overlaps } from "../scheduling/coverage.js";
-import type { StaffPublicProfileInput, ProfileInput, ServiceInput, StaffInput, QualificationInput, HoursInput, ScheduleInput, ClosureInput, UnavailabilityInput, PolicyInput } from "./configuration.schema.js";
+import type { StaffSkillsInput, StaffPublicProfileInput, ProfileInput, ServiceInput, StaffInput, QualificationInput, HoursInput, ScheduleInput, ClosureInput, UnavailabilityInput, PolicyInput } from "./configuration.schema.js";
 
 type Tx = Prisma.TransactionClient;
 const time = (value: string) => new Date(`1970-01-01T${value.length === 5 ? `${value}:00` : value}Z`);
@@ -95,7 +95,7 @@ export function createConfigurationService(prisma: PrismaClient, timeZone: strin
     },
     publicServices() {
       return prisma.service.findMany({ where: { isActive: true }, select: {
-        id: true, name: true, description: true, price: true, durationMinutes: true,
+        id: true, name: true, category: true, description: true, price: true, durationMinutes: true,
       }, orderBy: [{ name: "asc" }, { id: "asc" }] });
     },
     saveProfile(actorId: string, input: ProfileInput) {
@@ -144,6 +144,34 @@ export function createConfigurationService(prisma: PrismaClient, timeZone: strin
         if (before?.isActive && !row.isActive) await protect(tx, { staffId: row.staffId, serviceId: row.serviceId }, () => true);
         await audit(tx, actorId, "StaffService", row.id, before, row);
         return row;
+      });
+    },
+    saveStaffSkills(actorId: string, staffId: string, input: StaffSkillsInput) {
+      return write(actorId, "shared", [staffId], async tx => {
+        required(await tx.staff.findUnique({ where: { id: staffId } }));
+        const existing = await tx.staffService.findMany({ where: { staffId } });
+        const selected = new Map(input.services.map(row => [row.serviceId, row]));
+        const services = await tx.service.findMany({ where: { id: { in: [...selected.keys()] } } });
+        if (services.length !== selected.size) throw new ApiError(400, "INVALID_REFERENCE", "Select existing services.");
+        // Existing qualifications for inactive menu items can be retained, but
+        // inactive services cannot be newly enabled through the skills editor.
+        if (services.some(row => !row.isActive && !existing.some(q => q.serviceId === row.id && q.isActive))) {
+          throw new ApiError(400, "SERVICE_UNAVAILABLE", "Inactive services cannot be newly assigned.");
+        }
+        const removed = existing.filter(row => row.isActive && !selected.has(row.serviceId));
+        if (removed.length) await protect(tx, { staffId, serviceId: { in: removed.map(row => row.serviceId) } }, () => true);
+        for (const before of removed) {
+          const row = await tx.staffService.update({ where: { id: before.id }, data: { isActive: false } });
+          await audit(tx, actorId, "StaffService", row.id, before, row);
+        }
+        for (const item of input.services) {
+          const before = existing.find(row => row.serviceId === item.serviceId) ?? null;
+          if (before?.isActive && before.commissionRate.equals(item.commissionRate)) continue;
+          const data = { staffId, ...item, isActive: true };
+          const row = before ? await tx.staffService.update({ where: { id: before.id }, data }) : await tx.staffService.create({ data });
+          await audit(tx, actorId, "StaffService", row.id, before, row);
+        }
+        return tx.staffService.findMany({ where: { staffId }, orderBy: { id: "asc" } });
       });
     },
     saveHours(actorId: string, input: HoursInput, id?: string) {

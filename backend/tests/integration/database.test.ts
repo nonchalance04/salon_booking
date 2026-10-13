@@ -77,14 +77,33 @@ test("migrations apply and development seeding is repeatable with hashed passwor
     prisma.user.count(), prisma.salonProfile.count(), prisma.bookingPolicyVersion.count(),
     prisma.salonOperatingHour.count(), prisma.service.count(), prisma.staff.count(),
     prisma.staffService.count(), prisma.staffSchedule.count(),
-  ]), [2, 1, 1, 7, 30, 3, 90, 21]);
+  ]), [2, 1, 1, 7, 30, 5, 125, 35]);
   const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: fixtureEnv.SEED_ADMIN_EMAIL } });
   assert.ok(await bcrypt.compare(fixtureEnv.SEED_ADMIN_PASSWORD, adminUser.passwordHash));
   const policy = await prisma.bookingPolicyVersion.findFirstOrThrow();
   assert.equal(policy.appointmentFeeAmount.toFixed(2), "100.00");
   assert.equal(policy.effectiveFrom.toISOString(), "2026-09-30T16:00:00.000Z");
   const migrations = await pool.query('SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL');
-  assert.equal(migrations.rowCount, 2);
+  assert.equal(migrations.rowCount, 7);
+});
+
+test("seed configures Mildred for explicit nail services and reconciles stale qualifications on rerun", async () => {
+  const mildred = await prisma.staff.findFirstOrThrow({ where: { firstName: "Mildred" } });
+  const active = () => prisma.staffService.findMany({ where: { staffId: mildred.id, isActive: true }, include: { service: true } });
+  const expected = ["Manicure", "Pedicure", "Manicure & Pedicure", "Gel Polish", "Nail Art"].sort();
+  assert.deepEqual((await active()).map(row => row.service.name).sort(), expected);
+  const hair = await prisma.service.findFirstOrThrow({ where: { category: "Hair" } });
+  const stale = await prisma.staffService.create({ data: { staffId: mildred.id, serviceId: hair.id, commissionRate: "0.4" } });
+  const manicure = (await active()).find(row => row.service.name === "Manicure")!;
+  await prisma.staffService.update({ where: { id: manicure.id }, data: { isActive: false, commissionRate: "0.5" } });
+  await seed();
+  assert.deepEqual((await active()).map(row => row.service.name).sort(), expected);
+  assert.equal((await prisma.staffService.findUniqueOrThrow({ where: { id: stale.id } })).isActive, false);
+  const restored = await prisma.staffService.findUniqueOrThrow({ where: { id: manicure.id } });
+  assert.equal(restored.isActive, true);
+  assert.equal(restored.commissionRate.toFixed(4), "0.4000");
+  await seed();
+  assert.equal(await prisma.staffService.count({ where: { staffId: mildred.id } }), 6);
 });
 
 test("seed refuses production execution and rolls back when another salon profile exists", async () => {
@@ -172,9 +191,10 @@ test("money, instant storage, required partial indexes, and restrictive referenc
   assert.deepEqual(indexes.rows.map((row) => row.indexname).sort(), [
     "AppointmentService_active_sequence_unique", "Payment_appointment_fee_obligation_unique", "Payment_successful_service_payment_unique",
   ]);
-  const foreignKeys = await pool.query("SELECT confdeltype FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace");
+  const foreignKeys = await pool.query("SELECT conname, confdeltype FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace");
   assert.ok(foreignKeys.rowCount && foreignKeys.rowCount > 0);
-  assert.ok(foreignKeys.rows.every((row) => row.confdeltype === "r"));
+  const ephemeralGuestReferences = new Set(["AppointmentOtpChallenge_appointmentId_fkey", "AppointmentGuestSession_appointmentId_fkey"]);
+  assert.ok(foreignKeys.rows.every((row) => row.confdeltype === (ephemeralGuestReferences.has(row.conname) ? "c" : "r")));
 });
 
 test("authentication and account management enforce browser and database permissions", async context => {

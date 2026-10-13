@@ -1,3 +1,4 @@
+import { WaitingQueue } from "./waiting-queue";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { SettlementWorkspace } from "./settlement";
@@ -63,6 +64,7 @@ export function CashierDashboard({ admin = false, showOverview = true }: { admin
       </details>
     </>}
     {selected ? <SettlementWorkspace key={selected} admin={admin} initialCode={selected} onFinalized={() => void load()} onBack={() => { setSelected(null); void load(); }} /> : <>
+      <WaitingQueue onSelect={setSelected} />
       <ConfirmedServices admin={admin} onSelect={setSelected} />
       <details><summary>Find another booking by code</summary><form className="account-form cashier-search" onSubmit={search}><label>Find any booking by code<input name="code" required maxLength={100} placeholder="Enter booking code" /></label><button className="primary">Find appointment</button></form></details>
       <details className="today-activity"><summary>Today’s appointment activity and receipts</summary><h3>Today’s appointments</h3><p className="muted">Confirmed appointments awaiting settlement and completed appointments. Open a booking to review services and fee payment history.</p>

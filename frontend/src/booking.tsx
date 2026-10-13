@@ -7,6 +7,7 @@ import { AppointmentManagement } from "./appointment-management";
 import { FeePaymentControls, FeePaymentHistory, type FeePayment } from "./payments";
 export type BookingPlan = { date: string; startAt: string; services: ({ serviceId: string; assignmentMode: "ANY_AVAILABLE" } | { serviceId: string; assignmentMode: "SPECIFIC"; staffId: string })[] };
 export type Appointment = {
+  checkedInAt: string | null; checkedInByUser?: { firstName: string; lastName: string } | null;
   rescheduleCount: number; cancelledAt: string | null; noShowAt: string | null; noShowGraceExpiresAt: string | null;
   recoveryAppointment: { bookingCode: string } | null; carriedAppointmentFeePaymentId: string | null;
   bookingPolicyVersion: { maxReschedules: number; rescheduleCutoffHours: number; cancellationCutoffHours: number; noShowGraceHours: number };

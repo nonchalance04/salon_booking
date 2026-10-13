@@ -266,21 +266,49 @@ const services = [
 // Approved development staff fixtures
 // ------------------------------------------------------------
 
-const staffFixtures = [
+type SeedServiceName = (typeof services)[number]["name"];
+type SeedStaffFixture = {
+  id: string; firstName: string; lastName: string;
+  serviceNames: readonly SeedServiceName[]; commissionRate: string;
+};
+// Keep the other staff's existing development assignments until their actual
+// skills are specified. Replace these lists with exact catalog service names.
+const allServiceNames = services.map(service => service.name);
+const staffFixtures: readonly SeedStaffFixture[] = [
   {
     id: seedUuid(4, 1),
-    firstName: "Andrea",
-    lastName: "Santos",
+    firstName: "Mary Grace",
+    lastName: "",
+    serviceNames: allServiceNames,
+    commissionRate: "0.4000",
   },
   {
     id: seedUuid(4, 2),
-    firstName: "Bianca",
-    lastName: "Reyes",
+    firstName: "Maris",
+    lastName: "",
+    serviceNames: allServiceNames,
+    commissionRate: "0.4000",
   },
   {
     id: seedUuid(4, 3),
-    firstName: "Carla",
-    lastName: "Mendoza",
+    firstName: "Bea",
+    lastName: "",
+    serviceNames: allServiceNames,
+    commissionRate: "0.4000",
+  },
+  {
+    id: seedUuid(4, 4),
+    firstName: "Rose Ann",
+    lastName: "",
+    serviceNames: allServiceNames,
+    commissionRate: "0.4000",
+  },
+  {
+    id: seedUuid(4, 5),
+    firstName: "Mildred",
+    lastName: "",
+    serviceNames: ["Manicure", "Pedicure", "Manicure & Pedicure", "Gel Polish", "Nail Art"],
+    commissionRate: "0.4000",
   },
 ] as const;
 
@@ -415,16 +443,14 @@ async function main() {
         name: "Clique Salon",
         phone: "09057486436",
         email: null,
-        address:
-          "79 Geronimo St., Brgy. Bagong Silangan, Quezon City",
+        address: "79 Geronimo St., Brgy. Bagong Silangan, Quezon City",
       },
       create: {
         id: SALON_PROFILE_ID,
         name: "Clique Salon",
         phone: "09057486436",
         email: null,
-        address:
-          "79 Geronimo St., Brgy. Bagong Silangan, Quezon City",
+        address: "79 Geronimo St., Brgy. Bagong Silangan, Quezon City",
       },
     });
 
@@ -511,6 +537,7 @@ async function main() {
         update: {
           name: service.name,
           description: service.description,
+          category: service.description.startsWith("Hair") ? "Hair" : service.description === "Nail Services" ? "Nails" : "Spa & Relaxation",
           price: service.price,
           durationMinutes: service.durationMinutes,
           bufferMinutes: null,
@@ -520,6 +547,7 @@ async function main() {
           id,
           name: service.name,
           description: service.description,
+          category: service.description.startsWith("Hair") ? "Hair" : service.description === "Nail Services" ? "Nails" : "Spa & Relaxation",
           price: service.price,
           durationMinutes: service.durationMinutes,
           bufferMinutes: null,
@@ -562,28 +590,36 @@ async function main() {
     // --------------------------------------------------------
     // Qualifications
     //
-    // All 3 initial staff are qualified for all services.
-    // Staff commission = 40%.
-    // Salon share = remaining 60%.
+    // Only the services listed in each staff fixture are enabled.
+    // Unlisted qualifications are deactivated when re-seeding, not deleted.
     // --------------------------------------------------------
 
-    for (const staff of seededStaff) {
-      for (const service of seededServices) {
+    for (const fixture of staffFixtures) {
+      const serviceNames = new Set<string>(fixture.serviceNames);
+      const qualifiedServices = seededServices.filter(service => serviceNames.has(service.name));
+      if (qualifiedServices.length !== serviceNames.size || fixture.serviceNames.length !== serviceNames.size) {
+        throw new Error(`Unknown or duplicate catalog service names configured for ${fixture.firstName}.`);
+      }
+      await tx.staffService.updateMany({
+        where: { staffId: fixture.id, serviceId: { notIn: qualifiedServices.map(service => service.id) }, isActive: true },
+        data: { isActive: false },
+      });
+      for (const service of qualifiedServices) {
         await tx.staffService.upsert({
           where: {
             staffId_serviceId: {
-              staffId: staff.id,
+              staffId: fixture.id,
               serviceId: service.id,
             },
           },
           update: {
-            commissionRate: "0.4000",
+            commissionRate: fixture.commissionRate,
             isActive: true,
           },
           create: {
-            staffId: staff.id,
+            staffId: fixture.id,
             serviceId: service.id,
-            commissionRate: "0.4000",
+            commissionRate: fixture.commissionRate,
             isActive: true,
           },
         });

@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { confirmationSms, suppressRoutineSms } from "../src/modules/notifications/minimal-sms.js";
 import { parseEnv } from "../src/config/env.schema.js";
-test("confirmation contains simple booking details in one SMS without links", () => {
-  const message = confirmationSms({ id: "queue-id", recipient: "09171234567" }, new Date("2026-10-15T06:00:00Z"), "Asia/Manila", "BOOK-123");
-  assert.equal(message.text, "CLIQUE: Fee paid. Confirmed Oct 15, 2026, 2:00 PM (salon time). Booking: BOOK-123.");
-  assert.ok(message.text.length <= 160);
-  assert.match(message.text, /^[\x20-\x7E]+$/);
+test("confirmation uses the requested customer greeting, local time range and reference", () => {
+  const message = confirmationSms({ id: "queue-id", recipient: "09171234567" }, {
+    startAt: new Date("2026-10-21T23:00:00Z"), endAt: new Date("2026-10-22T01:00:00Z"),
+    bookingCode: "BOOK-123", customer: { firstName: "María", lastName: "Santos" },
+  }, "Asia/Manila");
+  assert.equal(message.text, "Hello, María Santos!\n\n" +
+    "Your appointment at Clique Salon has been successfully confirmed, and your appointment fee has been received. Thank you for choosing us!\n\n" +
+    "Date: October 22, 2026\nTime: 7:00 AM – 9:00 AM\nReference Number: BOOK-123\n\n" +
+    "Please keep your reference number for future inquiries or when managing your existing appointment. Kindly arrive on time to ensure a smooth and hassle-free experience. We look forward to welcoming you to Clique Salon. See you soon!");
+  assert.equal(message.recipient, "+639171234567");
   assert.doesNotMatch(message.text, /https?:|Private link|#/);
-  assert.throws(() => confirmationSms({ id: "id", recipient: "09171234567" }, new Date(), "Asia/Manila", "A".repeat(160)), /SMS_CONTENT_TOO_LONG/);
 });
 test("minimal policy suppresses routine SMS while keeping changes, exceptions and email", () => {
   for (const eventType of ["PAYMENT_RECEIVED", "APPOINTMENT_COMPLETED", "APPOINTMENT_REMINDER"] as const) {

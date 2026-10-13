@@ -40,3 +40,10 @@ export const appointmentListQuery = z.object({
   staffId: z.uuid().optional(), search: z.string().trim().max(100).optional(),
 }).strict().refine(q => !q.from || !q.to || q.from <= q.to, "The end date must follow the start date.");
 export type AppointmentListQuery = z.infer<typeof appointmentListQuery>;
+
+export const noShowCorrectionSchema = z.object({
+  bookingCode: z.string().trim().min(1).max(100),
+  reason: z.string().trim().min(1).max(1000),
+  customerPresent: z.literal(true),
+}).strict();
+export type NoShowCorrectionInput = z.infer<typeof noShowCorrectionSchema>;

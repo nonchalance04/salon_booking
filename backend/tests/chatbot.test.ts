@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Prisma } from "../generated/prisma/client.js";
 import { createChatbotService } from "../src/modules/chatbot/chatbot.service.js";
 import { chatbotSchema } from "../src/modules/chatbot/chatbot.schema.js";
-const source = { publicServices: async () => [{ id: "1", name: "Current cut", description: "Salon description", price: new Prisma.Decimal("123.45"), durationMinutes: 30 }], publicSalon: async () => ({ profile: null, timeZone: "Asia/Manila", hours: [], closures: [] }), publicPolicy: async () => null };
+const source = { publicServices: async () => [{ id: "1", name: "Current cut", category: "Hair", description: "Salon description", price: new Prisma.Decimal("123.45"), durationMinutes: 30 }], publicSalon: async () => ({ profile: null, timeZone: "Asia/Manila", hours: [], closures: [] }), publicPolicy: async () => null };
 test("guided answers retrieve authoritative service data and handle missing configuration", async () => {
   const bot = createChatbotService(source);
   assert.match((await bot.answer("What services and prices?" )).answer, /Current cut: PHP 123.45, 30 minutes/);

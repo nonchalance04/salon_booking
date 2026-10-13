@@ -415,3 +415,28 @@ emails are suppressed only when the same appointment, recipient and payment ID
 have a confirmation record and no reconciliation is required. Standalone/review
 payments and cancellation/reschedule/completion notices retain their meaning.
 Full-policy SMS reminders remain supported. No history is deleted or re-sent.
+
+## 2026-10-13 — Staff-recorded customer check-in (step 2)
+
+Record arrival independently of service completion using Appointment.checkedInAt and checkedInByUserId. Only active Cashier/Admin accounts can confirm physical arrival on the scheduled salon date. Use the existing appointment/staff locking protocol, server timestamps, strict request validation and one transactional audit record; duplicate check-ins preserve the first actor/time. Protect checked-in visits from no-show marking and customer schedule changes. Automatic marking stays disabled until step 3; no correction action or waiting queue is introduced in this step.
+
+## 2026-10-13 — Automatic no-show after arrival grace (step 3)
+
+Re-enable the hold worker's automatic NO_SHOW processing at scheduled start plus 15 minutes. Exclude checked-in visits, completion records and recorded active service outcomes before batch selection and revalidate under the existing staff/appointment locking protocol with fresh database time. Keep original policy recovery deadlines and write a SYSTEM audit atomically. Competing check-in and marking use the same appointment locks; a late check-in cannot restore a released reservation. The correction workflow and dedicated waiting queue remain steps 4 and 5.
+
+## 2026-10-13 — Audited no-show correction (step 4)
+
+Introduce an Admin-only exception to the terminal NO_SHOW rule for an unresolved same-day visit that has not ended. Require a reason and explicit physical presence. Recheck original service intervals and buffers against current staff qualifications, operating/schedule coverage, closures, time off and blocking reservations under the existing locks. Reject any linked replacement to protect recovery history and carried fees. Restore CONFIRMED and check in atomically with BOOKING_NO_SHOW_CORRECTED, preserving previous no-show timestamps in the audit. No schedule extension or financial changes. Historical/ended visits require a new booking rather than reactivation; a dedicated waiting queue remains step 5.
+
+## 2026-10-13 — Checked-in waiting queue (step 5)
+
+Add an authenticated read-only queue for Cashier/Admin using existing arrival and service-outcome fields, without adding a new service-start lifecycle. Include checked-in confirmed unresolved appointments across all dates, oldest arrival first, with bounded search/pagination and scheduled-end review flags. Use server time for elapsed arrival duration; do not infer a service start from arrival or fabricate service outcomes. Refresh on a 30-second visible-screen cadence, focus, manual requests and local arrival events. Reuse the service workspace to review/resolve visits. No database migration or automatic queue mutations are needed.
+
+## 2026-10-13 — Staff skills management
+
+Add an editable Service category and a per-staff grouped checkbox editor. Keep StaffService as the sole qualification authority, including commission rates. Save the complete selected service set in one transaction under existing salon/staff locks; deactivate omitted qualifications, reuse existing records when re-enabled, audit changed records, and reject the entire save if it would invalidate blocking reservations. Categories do not automatically qualify staff for other services in the same category.
+
+
+## 2026-10-13 — Personalized confirmation SMS
+
+Use the customer-requested greeting and full confirmation wording, including the customer name, full appointment date, start–end time range in the salon timezone, and booking code as the reference number. This supersedes the earlier one-segment ASCII limit: submit the complete message in one provider request and allow provider SMS segmentation. Every SMS policy checks current confirmed appointment state and verified fee payment before sending the fee-received claim. Existing suppression, duplicate prevention, OTP and retry policies remain in place.

@@ -181,11 +181,16 @@ test("report HTTP authorization, cache controls, validation and public chatbot b
     assert.equal((await fetch(`${base}/reports/collections${query}`)).status, 401);
     assert.equal((await fetch(`${base}/reports/cashier-queue${query}`)).status, 401);
     assert.equal((await fetch(`${base}/reports/confirmed-services`)).status, 401);
+    assert.equal((await fetch(`${base}/reports/waiting-queue`)).status, 401);
     for (const token of [adminCookie, cashierCookie]) {
       const confirmed = await fetch(`${base}/reports/confirmed-services`, { headers: { Cookie: token } });
       assert.equal(confirmed.status, 200); assert.equal(confirmed.headers.get("cache-control"), "no-store");
+      const waiting = await fetch(`${base}/reports/waiting-queue`, { headers: { Cookie: token } });
+      assert.equal(waiting.status, 200); assert.equal(waiting.headers.get("cache-control"), "no-store");
     }
     assert.equal((await fetch(`${base}/reports/confirmed-services?pageSize=101`, { headers: { Cookie: cashierCookie } })).status, 400);
+    assert.equal((await fetch(`${base}/reports/waiting-queue?pageSize=101`, { headers: { Cookie: cashierCookie } })).status, 400);
+    assert.equal((await fetch(`${base}/reports/waiting-queue?unknown=true`, { headers: { Cookie: cashierCookie } })).status, 400);
     for (const kind of ["dashboard", "appointments", "payments", "receipts", "commissions", "audit"]) assert.equal((await fetch(`${base}/reports/${kind}${query}`, { headers: { Cookie: cashierCookie } })).status, 403);
     const summary = await fetch(`${base}/reports/collections${query}`, { headers: { Cookie: cashierCookie } }); assert.equal(summary.status, 200); assert.equal(summary.headers.get("cache-control"), "no-store");
     const queue = await fetch(`${base}/reports/cashier-queue${query}`, { headers: { Cookie: cashierCookie } }); assert.equal(queue.status, 200); assert.equal(queue.headers.get("cache-control"), "no-store");
@@ -241,4 +246,49 @@ test("admin appointment filters cover full pagination, salon-date boundaries, na
   await assert.rejects(service.list(cashier.id, undefined, filters), { code: "FORBIDDEN" });
   assert.equal(appointmentListQuery.safeParse({ from: "2030-06-13", to: "2030-06-12" }).success, false);
   assert.equal(appointmentListQuery.safeParse({ status: "MADE_UP" }).success, false);
+});
+
+test("waiting queue includes only checked-in visits without active outcomes, oldest first across dates", async () => {
+  const admin = await actor(); const cashier = await actor("CASHIER");
+  const search = randomUUID();
+  const createWaiting = async (minutes: number) => {
+    const a = await appointment({ bookingCode: `${search}-${randomUUID()}`, status: "CONFIRMED", checkedInAt: new Date(Date.now() - minutes * 60_000), checkedInByUser: { connect: { id: cashier.id } } });
+    const staff = await prisma.staff.create({ data: { firstName: "Waiting", lastName: "Stylist" } });
+    const service = await prisma.service.create({ data: { name: "Current catalog name", price: "90", durationMinutes: 30 } });
+    const item = await prisma.appointmentService.create({ data: { appointmentId: a.id, staffId: staff.id, serviceId: service.id, assignmentMode: "SPECIFIC", sequenceNo: 1,
+      serviceNameSnapshot: "Booked haircut", priceSnapshot: "70", durationMinutesSnapshot: 30, bufferMinutesSnapshot: 15, commissionRateSnapshot: "0.4",
+      scheduledStartAt: a.startAt, scheduledEndAt: a.endAt, reservedUntilAt: a.endAt } });
+    return { a, item };
+  };
+  const oldest = await createWaiting(80); const newer = await createWaiting(10);
+  const performed = await createWaiting(30); const finalized = await createWaiting(40);
+  const absent = await createWaiting(60); const cancelled = await createWaiting(70);
+  const completed = await createWaiting(90); const noShow = await createWaiting(100);
+  const noActive = await createWaiting(110); const pending = await createWaiting(120);
+  await prisma.appointmentService.update({ where: { id: performed.item.id }, data: { outcome: "PERFORMED" } });
+  await prisma.appointmentService.update({ where: { id: finalized.item.id }, data: { outcomeFinalizedAt: new Date() } });
+  await prisma.appointmentService.update({ where: { id: noActive.item.id }, data: { membershipStatus: "REMOVED" } });
+  await prisma.appointment.update({ where: { id: absent.a.id }, data: { checkedInAt: null, checkedInByUserId: null } });
+  await prisma.appointment.update({ where: { id: cancelled.a.id }, data: { status: "CANCELLED" } });
+  await prisma.appointment.update({ where: { id: completed.a.id }, data: { completedAt: new Date() } });
+  await prisma.appointment.update({ where: { id: noShow.a.id }, data: { status: "NO_SHOW" } });
+  await prisma.appointment.update({ where: { id: pending.a.id }, data: { status: "PENDING_PAYMENT" } });
+  // Removed historical activity must not hide the current active visit.
+  await prisma.appointmentService.create({ data: { ...newer.item, id: randomUUID(), sequenceNo: 2, membershipStatus: "REMOVED", outcome: "PERFORMED" } });
+  const q = { page: 1, pageSize: 1, search };
+  const first = await reports.waitingQueue(cashier.id, q);
+  const second = await reports.waitingQueue(admin.id, { ...q, page: 2 });
+  assert.equal(first.total, 2); assert.equal(first.rows[0]!.bookingCode, oldest.a.bookingCode);
+  assert.equal(second.rows[0]!.bookingCode, newer.a.bookingCode);
+  assert.ok(first.rows[0]!.minutesSinceCheckIn >= 80);
+  assert.equal(first.rows[0]!.needsReview, oldest.a.endAt <= new Date(first.serverTime));
+  assert.equal(first.rows[0]!.appointmentServices[0]!.serviceNameSnapshot, "Booked haircut");
+  assert.ok(first.rows[0]!.checkedInByUser);
+  assert.doesNotMatch(JSON.stringify(first), /guestAccess|password|phone|email|commission|priceSnapshot/);
+  const empty = await reports.waitingQueue(cashier.id, { ...q, search: "no-such-waiting-customer" });
+  assert.equal(empty.total, 0);
+  await prisma.appointmentService.update({ where: { id: newer.item.id }, data: { outcome: "NOT_PERFORMED" } });
+  assert.equal((await reports.waitingQueue(cashier.id, q)).total, 1);
+  await prisma.user.update({ where: { id: cashier.id }, data: { isActive: false } });
+  await assert.rejects(reports.waitingQueue(cashier.id, q));
 });

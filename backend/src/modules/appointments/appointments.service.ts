@@ -35,7 +35,7 @@ export const guestSelect = {
   rescheduleCount: true, cancelledAt: true, noShowAt: true, noShowGraceExpiresAt: true,
   recoveryAppointment: { select: { bookingCode: true } }, carriedAppointmentFeePaymentId: true,
   bookingPolicyVersion: { select: { maxReschedules: true, rescheduleCutoffHours: true, cancellationCutoffHours: true, noShowGraceHours: true } },
-  confirmedAt: true,
+  checkedInAt: true, confirmedAt: true,
   payments: { where: { type: "APPOINTMENT_FEE" }, orderBy: { createdAt: "asc" }, select: {
     id: true, status: true, amount: true, currency: true, satisfiesObligation: true, reconciliationStatus: true,
     receipt: { select: { receiptNumber: true, issuedAt: true, receiptSnapshot: true } },

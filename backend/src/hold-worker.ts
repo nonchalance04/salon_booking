@@ -1,3 +1,4 @@
+import { createAppointmentChangesService } from "./modules/appointments/appointment-changes.service.js";
 import { pruneAppointmentAccess } from "./modules/appointments/appointment-otp.service.js";
 import { prisma, disconnectDatabase } from "./database/prisma.js";
 import { env } from "./config/env.js";
@@ -6,6 +7,7 @@ import { createPaymentsService } from "./modules/payments/payments.service.js";
 import { configuredPaymentProvider } from "./modules/payments/provider-config.js";
 const service = createAppointmentsService(prisma, env.SALON_TIMEZONE);
 const payments = createPaymentsService(prisma, configuredPaymentProvider(env), env.SALON_TIMEZONE);
+const changes = createAppointmentChangesService(prisma, env.SALON_TIMEZONE);
 let stopping = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running: Promise<void> | undefined;
@@ -18,6 +20,8 @@ async function tick() {
   }
   try { await service.expireHolds(); }
   catch { console.error(JSON.stringify({ level: "error", event: "hold_expiration_failed" })); }
+  try { await changes.markOverdueNoShows(); }
+  catch { console.error(JSON.stringify({ level: "error", event: "automatic_no_show_failed" })); }
   try { await payments.synchronizeExpired(1); }
   catch { console.error(JSON.stringify({ level: "error", event: "payment_cleanup_failed" })); }
   if (!stopping) timer = setTimeout(startTick, 5000);

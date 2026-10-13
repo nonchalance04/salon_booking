@@ -30,7 +30,7 @@ A customer may:
 
 - Browse active salon services.
 - View service prices and durations.
-- Select one or more services.
+- Select one or more services. Customer booking and availability APIs enforce one service per category and no duplicate services, including rescheduling and no-show recovery requests. Categories are compared after trimming whitespace and ignoring case. The booking UI replaces the previous choice when another service in the same category is selected.
 - Choose a specific qualified staff member for each service.
 - Choose Any Available Staff for each service.
 - Select an available appointment date and starting time.
@@ -144,6 +144,10 @@ Changes to the current service name, price, duration, or buffer must not automat
 A staff member may perform only services for which they are qualified.
 
 Staff-service qualifications are explicitly configured by the Admin.
+
+Admins can manage a staff member's qualifications together using service checkboxes grouped by the Service category (for example Hair or Nails). Categories organize the list and do not grant eligibility: each service must be individually selected. Staff may qualify for services in multiple categories; staff with no active qualifications cannot receive new assignments.
+
+Saving skills updates qualifications in one audited transaction, retaining deactivated records and reusing them when re-enabled. Removing a qualification needed by an existing blocking reservation is rejected together with all other changes in that save. Existing appointment commission snapshots remain unchanged.
 
 Before assigning a staff member to a service, the system must verify that:
 
@@ -663,9 +667,25 @@ If a staff assignment must change, the newly assigned staff member must have an 
 
 ---
 
+# Customer Arrival / Check-In
+
+An active Cashier or Admin may record arrival for a CONFIRMED, uncompleted appointment on its scheduled salon-local date. Early arrival on that date is allowed; check-in on another date or after recorded active service outcomes is rejected. Staff must confirm the customer is physically present.
+
+Check-in records `checkedInAt` using server/database time and `checkedInByUserId` using the authenticated account. These fields are recorded atomically with a BOOKING_CHECKED_IN audit event. Repeated or concurrent check-ins preserve the first arrival and first actor and do not duplicate audit events. Clients cannot supply the timestamp or actor.
+
+Check-in leaves status CONFIRMED and does not record service performance, completion, payment, or a new reservation interval. Checked-in appointments cannot be marked NO_SHOW or changed/cancelled through customer workflows. Staff views show arrival time and the recording staff member. An Admin can correct eligible no-shows through the audited correction workflow below; the checked-in waiting queue below supports staff follow-up. Automatic no-show marking uses this arrival record to protect present customers.
+
+---
+
 # 24. No-Show and No-Show Recovery
 
 An Admin may mark a CONFIRMED appointment NO_SHOW when the customer fails to appear according to salon procedure.
+
+The hold worker automatically marks an appointment NO_SHOW once 15 minutes have elapsed from its scheduled start, only when status is CONFIRMED, there is no check-in, no completion record, and no recorded active service outcome or finalized outcome timestamp. Removed service rows do not establish activity for the current visit. Eligibility is inclusive at the deadline and is revalidated against database time under the same locks used for check-in and settlement. Checked-in customers remain protected even while waiting for a stylist.
+
+Automatic marking sets noShowAt, uses the original appointment policy to calculate the recovery deadline from the scheduled start, releases availability through the NO_SHOW status, and writes one SYSTEM BOOKING_NO_SHOW audit event atomically. Repeated/competing workers do not duplicate the transition or audit. The worker checks roughly every five seconds while running, processes up to 100 eligible appointments per pass, and catches up overdue eligible appointments after downtime. This is not an exact-time scheduler.
+
+If check-in commits first, automatic marking skips the visit. If automatic marking commits first, ordinary check-in rejects the NO_SHOW visit; it does not restore a released reservation. An eligible Admin correction can restore and check in the customer as described below. Staff must record physical arrival promptly; forgetting check-in can still result in a no-show when no service activity is recorded.
 
 The MVP default is:
 
@@ -673,9 +693,9 @@ The MVP default is:
 
 The grace deadline is calculated from the original appointment start time, not from the time the Admin eventually marks the appointment NO_SHOW.
 
-A NO_SHOW appointment remains a historical record of the missed occurrence.
+A NO_SHOW appointment remains a historical record of the missed occurrence unless an Admin corrects the classification under the exception below. The original audit event always remains.
 
-It must not transition back to CONFIRMED.
+Ordinary customer recovery must not transition it back to CONFIRMED. The Admin correction exception below may restore a mistakenly marked no-show or an eligible late arrival.
 
 If no-show recovery is allowed:
 
@@ -689,6 +709,14 @@ If no-show recovery is allowed:
 8. Availability, qualification, scheduling, and concurrency rules are fully revalidated.
 9. The missed AppointmentService intervals remain historical and do not block future availability.
 10. Only one no-show recovery appointment may be created from the same NO_SHOW appointment.
+
+## Admin No-Show Correction / Late Arrival
+
+An active Admin may restore an unresolved NO_SHOW to CONFIRMED only with a nonblank reason and explicit confirmation that the customer is physically present. The visit must be on the current salon date and its original end time must not have passed. It must have active services, no linked replacement booking (including cancelled/expired replacements), no check-in, no completion record and no recorded active service outcomes.
+
+Under the same salon/staff/appointment locks as booking and recovery, verify the full original active service intervals including buffers against current operating hours, staff schedules, active staff and qualifications, closures, unavailability and blocking reservations (including live payment holds). Existing service snapshots are retained; this action does not move or extend the visit. If any original interval is unavailable or the visit has ended, reject restoration and arrange a new available booking.
+
+Restoration sets CONFIRMED and records check-in at fresh database time by the correcting Admin, preventing immediate automatic no-show marking. Clear the current noShowAt and recovery deadline fields, and preserve their previous values, the original no-show event, correcting Admin and reason in the audit history. Write BOOKING_NO_SHOW_CORRECTED atomically with restoration. No payment, refund, fee credit, reschedule count or policy changes occur. Concurrent duplicate corrections cannot create duplicate restoration audit events. Ordinary check-in and customer recovery cannot perform this exception.
 
 ## No-Show Recovery With Valid Carried Appointment-Fee Credit
 
@@ -1391,4 +1419,12 @@ With `NOTIFICATION_SMS_POLICY=single`, only the combined paid-booking confirmati
 
 ## Simple booking confirmation SMS (2026-10-13)
 
-Booking confirmation SMS contains fee-paid confirmation, the booking code, and appointment date/time in the salon timezone. It contains no links and creates no new guest access session. Existing links and on-demand OTP access remain valid.
+Booking confirmation SMS greets the customer by full name and contains fee-paid confirmation, the full appointment date, start–end time range in the salon timezone, and the booking code as the reference number, followed by reference-retention and arrival guidance. It contains no links and creates no new guest access session. Existing links and on-demand OTP access remain valid. The longer customer-requested template may span multiple SMS segments; the former 160-character limit no longer applies. All SMS confirmation policies verify current confirmed appointment state and a successful appointment-fee payment before sending this wording.
+
+## Checked-in Waiting Queue (step 5)
+
+Active Cashier and Admin accounts can read the dedicated waiting queue. It includes CONFIRMED appointments with a check-in, no completion record, at least one active service, and no active service with a recorded/finalized outcome. Removed historical service rows do not exclude the current visit. A visit leaves this queue once an active outcome is recorded, its status changes, or completion is recorded.
+
+Include all dates so old unresolved arrivals remain visible. Sort by oldest check-in then appointment ID, with bounded pagination and customer/booking search. Display the original scheduled start, arrival time, recording staff, service snapshots, assigned stylist, and server-calculated elapsed minutes since check-in. Flag visits past their scheduled end for staff review; do not cancel or reclassify them automatically. No separate service-start record exists, so queue membership means no outcomes have been recorded rather than proof that treatment has not begun.
+
+The queue refreshes every 30 seconds while visible, on focus, after local arrival changes, and on manual refresh. Reviewing a queue entry opens the existing service workspace. Queue reads do not change appointment status, staff assignments, payments or service outcomes.

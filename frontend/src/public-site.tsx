@@ -9,7 +9,7 @@ import "./reservation-design.css";
 import "./phone-input.css";
 import "./professional-picker.css";
 
-export type CatalogService = { id: string; name: string; description: string | null; price: string; durationMinutes: number };
+export type CatalogService = { id: string; category: string; name: string; description: string | null; price: string; durationMinutes: number };
 export type Salon = { profile: { name: string; address: string | null; email: string | null; phone: string | null } | null; timeZone: string };
 export const money = (value: string | number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(value));
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";

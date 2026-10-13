@@ -10,7 +10,7 @@ test("chatbot HTTP accepts follow-up context, returns authoritative cards and re
   const config = parseEnv({ DATABASE_URL: "postgresql://localhost/test", JWT_SECRET: "x".repeat(32),
     CHATBOT_PROVIDER: "gemini", GEMINI_API_KEY: "fake-key", GEMINI_MODEL: "fake-model" });
   const prisma = {
-    service: { findMany: async () => [{ id: "cut", name: "Haircut", description: "A fresh cut", price: new Prisma.Decimal(300), durationMinutes: 30 }] },
+    service: { findMany: async () => [{ id: "cut", name: "Haircut", category: "Hair", description: "A fresh cut", price: new Prisma.Decimal(300), durationMinutes: 30 }] },
     salonProfile: { findFirst: async () => null }, salonOperatingHour: { findMany: async () => [] },
     salonClosure: { findMany: async () => [] }, bookingPolicyVersion: { findFirst: async () => null },
   } as unknown as PrismaClient;

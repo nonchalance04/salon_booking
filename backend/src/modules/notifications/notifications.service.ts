@@ -160,13 +160,13 @@ export function createNotificationsService(
       }
       let message = renderNotification(row, options.timeZone);
       if (
-        minimalSms &&
         row.channel === "SMS" &&
         row.eventType === "BOOKING_CONFIRMED"
       ) {
         const appointment = row.appointmentId
           ? await db.appointment.findUnique({
               where: { id: row.appointmentId },
+              include: { customer: { select: { firstName: true, lastName: true } } },
             })
           : null;
         if (
@@ -191,9 +191,8 @@ export function createNotificationsService(
         }
         message = confirmationSms(
           row,
-          appointment.startAt,
+          appointment,
           options.timeZone,
-          appointment.bookingCode,
         );
       }
       if (row.eventType === "APPOINTMENT_REMINDER") {

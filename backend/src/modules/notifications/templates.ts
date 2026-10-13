@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { renderEmailLayout } from "./email-layout.js";
+import { renderSimpleEmailLayout } from "./simple-email-layout.js";
 import type { NotificationQueue } from "../../../generated/prisma/client.js";
 import {
   NotificationFailure,
@@ -108,7 +108,7 @@ export function renderNotification(
       row.channel === "SMS" ? smsRecipient(row.recipient) : row.recipient,
     subject,
     text: `Booking ${p.bookingCode}: ${text}`,
-    ...(row.channel === "EMAIL" ? { html: renderEmailLayout({
+    ...(row.channel === "EMAIL" ? { html: renderSimpleEmailLayout({
       title: subject, text, bookingCode: p.bookingCode, when,
     }) } : {}),
   };

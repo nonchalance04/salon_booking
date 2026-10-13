@@ -1,0 +1,12 @@
+.staff-skills-editor .skills-fields{border:0;padding:0;margin:0;min-width:0}
+.staff-skills-editor .skills-group{border:1px solid #deded6;border-radius:10px;padding:8px 18px;margin:24px 0;min-width:0}
+.staff-skills-editor legend{padding:0 8px;font-weight:600}
+.staff-skills-editor .skills-service{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0}
+.staff-skills-editor .skills-service+.skills-service{border-top:1px solid #e8e8e0}
+.staff-skills-editor .skills-check{display:flex;flex-direction:row;align-items:center;gap:12px;margin:0;min-width:0}
+.staff-skills-editor .skills-check input{width:18px;height:18px;flex-shrink:0;margin:0}
+.staff-skills-editor small{display:block;margin-top:5px;font-weight:400}
+.staff-skills-editor .skills-rate{width:140px;flex-shrink:0;font-size:12px}
+.staff-skills-editor .skills-rate input{width:100%}
+.staff-skill-summary{border-top:1px solid #e8e8e0;padding-top:14px;margin-top:18px;font-size:13px;line-height:1.7}
+@media(max-width:540px){.staff-skills-editor .skills-service{align-items:flex-start;flex-direction:column;gap:12px}.staff-skills-editor .skills-rate{margin-left:30px}.staff-skills-editor .actions{flex-wrap:wrap}}

@@ -118,6 +118,54 @@ test("staff, service, and qualification deactivation roll back when reservations
   assert.equal(await prisma.auditLog.count(), count);
 });
 
+test("grouped skills save atomically, retain qualification identities and historical commissions", async () => {
+  const f = await fixture();
+  const nail = await prisma.service.create({ data: { name: "Manicure", category: "Nails", price: "100", durationMinutes: 30 } });
+  const input = { services: [{ serviceId: nail.id, commissionRate: "0.35" }] };
+  const auditCount = await prisma.auditLog.count();
+  await expectConflict(service.saveStaffSkills(adminId, f.staff.id, input), f.booking.id);
+  assert.equal(await prisma.auditLog.count(), auditCount);
+  assert.equal(await prisma.staffService.count({ where: { staffId: f.staff.id } }), 1);
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "COMPLETED" } });
+  await service.saveStaffSkills(adminId, f.staff.id, input);
+  const old = await prisma.staffService.findUniqueOrThrow({ where: { id: f.qualification.id } });
+  assert.equal(old.isActive, false);
+  const added = await prisma.staffService.findUniqueOrThrow({ where: { staffId_serviceId: { staffId: f.staff.id, serviceId: nail.id } } });
+  assert.equal(added.commissionRate.toFixed(4), "0.3500");
+  await service.saveStaffSkills(adminId, f.staff.id, { services: [{ serviceId: f.item.id, commissionRate: "0.5" }] });
+  assert.equal((await prisma.staffService.findUniqueOrThrow({ where: { id: old.id } })).isActive, true);
+  assert.equal((await prisma.staffService.findUniqueOrThrow({ where: { id: added.id } })).isActive, false);
+  assert.equal((await prisma.appointmentService.findUniqueOrThrow({ where: { id: f.booking.appointmentServices[0]!.id } })).commissionRateSnapshot.toFixed(4), "0.4000");
+  await service.saveStaffSkills(adminId, f.staff.id, { services: [] });
+  assert.equal(await prisma.staffService.count({ where: { staffId: f.staff.id, isActive: true } }), 0);
+  assert.equal(await prisma.staffService.count({ where: { staffId: f.staff.id } }), 2);
+});
+
+test("nail-only staff cannot be assigned hair or unselected nail services", async () => {
+  const f = await fixture();
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "CANCELLED" } });
+  await prisma.service.update({ where: { id: f.item.id }, data: { category: "Nails" } });
+  const hair = await prisma.service.create({ data: { name: "Haircut", category: "Hair", price: "120", durationMinutes: 30 } });
+  const otherNail = await prisma.service.create({ data: { name: "Gel extensions", category: "Nails", price: "250", durationMinutes: 30 } });
+  await service.saveStaffSkills(adminId, f.staff.id, { services: [{ serviceId: f.item.id, commissionRate: "0.4" }] });
+  const availability = createAvailabilityService(prisma, "Asia/Manila");
+  const date = Temporal.Instant.fromEpochMilliseconds(+f.startAt).toZonedDateTimeISO("Asia/Manila").toPlainDate().toString();
+  const search = (serviceId: string, assignmentMode: "SPECIFIC" | "ANY_AVAILABLE") => availability.search({ date, startAt: f.startAt.toISOString(), services: [assignmentMode === "SPECIFIC" ? { serviceId, assignmentMode, staffId: f.staff.id } : { serviceId, assignmentMode }] });
+  assert.equal((await search(f.item.id, "SPECIFIC")).slots.length, 1);
+  for (const item of [hair, otherNail]) {
+    assert.equal((await search(item.id, "SPECIFIC")).slots.length, 0);
+    assert.equal((await search(item.id, "ANY_AVAILABLE")).slots.length, 0);
+  }
+  assert.deepEqual((await availability.catalog()).staff.find(row => row.id === f.staff.id)!.serviceIds, [f.item.id]);
+  const auditCount = await prisma.auditLog.count();
+  await assert.rejects(service.saveStaffSkills(adminId, f.staff.id, { services: [{ serviceId: randomUUID(), commissionRate: "0.4" }] }), { code: "INVALID_REFERENCE" });
+  await prisma.service.update({ where: { id: hair.id }, data: { isActive: false } });
+  await assert.rejects(service.saveStaffSkills(adminId, f.staff.id, { services: [{ serviceId: hair.id, commissionRate: "0.4" }] }), { code: "SERVICE_UNAVAILABLE" });
+  await assert.rejects(service.saveStaffSkills(cashierId, f.staff.id, { services: [] }), { code: "FORBIDDEN" });
+  assert.equal(await prisma.auditLog.count(), auditCount);
+  assert.equal((await prisma.staffService.findUniqueOrThrow({ where: { id: f.qualification.id } })).isActive, true);
+});
+
 test("hours and schedules cover the full reservation including buffer, dates, and alternative shifts", async () => {
   const f = await fixture();
   const hours = await prisma.salonOperatingHour.findFirstOrThrow({ where: { dayOfWeek: f.weekday } });
@@ -244,6 +292,14 @@ test("public APIs expose only public configuration; Admin API enforces roles, CS
     const policy = await prisma.bookingPolicyVersion.findFirstOrThrow();
     assert.equal((await request(`/configuration/policies/${policy.id}`, "PUT", adminCookie, {})).status, 404);
     const f = await fixture();
+    const skillsPath = `/configuration/staff/${f.staff.id}/skills`;
+    const skills = { services: [{ serviceId: f.item.id, commissionRate: "0.4" }] };
+    assert.equal((await request(skillsPath, "PUT", "", skills)).status, 401);
+    assert.equal((await request(skillsPath, "PUT", cashierCookie, skills)).status, 403);
+    assert.equal((await request(skillsPath, "PUT", adminCookie, skills, "https://evil.example")).status, 403);
+    assert.equal((await request(skillsPath, "PUT", adminCookie, { services: [skills.services[0], skills.services[0]] })).status, 400);
+    assert.equal((await request(skillsPath, "PUT", adminCookie, skills)).status, 200);
+    assert.equal((await request(skillsPath, "PUT", adminCookie, { services: [] })).status, 409);
     const publicProfile = { title: "Stylist", bio: "Public bio", photoUrl: null, languages: [], portfolio: [], reviews: [] };
     const profilePath = `/configuration/staff/${f.staff.id}/profile`;
     assert.equal((await request(profilePath, "PUT", "", publicProfile)).status, 401);

@@ -284,6 +284,8 @@ Inactive Staff:
 
 Represents salon service definitions.
 
+`category` is a required String, defaults to `Other`, and is limited to 100 trimmed characters by the configuration API. It groups services in staff skill management without granting qualifications. The initial migration classifies existing approved menu descriptions into Hair, Nails, and Spa & Relaxation; other services remain Other until an Admin classifies them.
+
 ## Fields
 
 - `id`
@@ -2312,3 +2314,7 @@ Business decision
 ## Appointment OTP access records
 
 `AppointmentOtpChallenge` stores a UUID, optional appointment relation (null for unmatched requests), hashed identity, keyed code digest, attempt count, creation/expiry times and consumption time. `AppointmentGuestSession` stores only the random session token's SHA-256 hash, appointment relation and expiry. `AppointmentOtpRate` stores keyed rate-limit identities, counts and window expiries. These temporary access records are separate from historical transactional data and are pruned by the hold worker.
+
+## Customer arrival tracking
+
+Appointment has nullable `checkedInAt` (TIMESTAMPTZ(3)) and `checkedInByUserId` (UUID referencing User with restricted deletion). A database check requires both fields to be set together or both null. The named AppointmentCheckedInBy relation is independent of the completion actor. Existing appointments receive null arrival fields; historical arrival is not inferred from service completion.

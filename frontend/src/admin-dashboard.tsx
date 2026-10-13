@@ -1,3 +1,4 @@
+import { WaitingQueue } from "./waiting-queue";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ConfirmedServices } from "./confirmed-services";
@@ -38,6 +39,7 @@ export function AdminDashboard({ onAppointments, onPayments, onSettlement, onRep
     <div className="section-heading"><div><p className="eyebrow">DAILY OVERVIEW</p><h2 id="admin-dashboard-title">Your salon, at a glance</h2><p className="muted">{data ? `${date} · ${data.timeZone} · Updated ${updated}` : "Today’s appointments and priorities"}</p></div><button disabled={busy} onClick={() => void load()}>{busy ? "Refreshing…" : "Refresh dashboard"}</button></div>
     {error && <p className="error" role="alert">{error} <button onClick={() => void load()}>Retry</button></p>}
     {busy && !data && <p role="status" className="admin-loading">Loading salon activity…</p>}
+    <WaitingQueue onSelect={onSettlement} />
     <ConfirmedServices admin onSelect={onSettlement} />
     {data && collections && <>
       <h3>What needs attention</h3><p className="muted">Open a card to review its records. Pending fees, unsettled services, and reconciliation include all dates.</p>

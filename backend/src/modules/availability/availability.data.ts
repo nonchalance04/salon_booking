@@ -8,10 +8,17 @@ import type { AvailabilityInput } from "./availability.schema.js";
 export async function loadAvailabilityData(tx: Prisma.TransactionClient, input: AvailabilityInput, timeZone: string, now: Date,
   policy: Awaited<ReturnType<Prisma.TransactionClient["bookingPolicyVersion"]["findFirstOrThrow"]>>,
   options: { retainedServiceIds?: string[]; excludeAppointmentId?: string } = {}) {
+  if (new Set(input.services.map(service => service.serviceId)).size !== input.services.length) {
+    throw new ApiError(400, "DUPLICATE_SERVICE", "Select each service only once.");
+  }
   const day = localDay(input.date, timeZone);
   const services = await tx.service.findMany({ where: { id: { in: input.services.map(s => s.serviceId) }, OR: [{ isActive: true }, { id: { in: options.retainedServiceIds ?? [] } }] } });
   if (input.services.some(s => !services.some(row => row.id === s.serviceId))) {
     throw new ApiError(400, "SERVICE_UNAVAILABLE", "One or more selected services are no longer bookable.");
+  }
+  const categories = services.map(service => service.category.trim().toLowerCase());
+  if (new Set(categories).size !== categories.length) {
+    throw new ApiError(400, "DUPLICATE_SERVICE_CATEGORY", "Select only one service per category.");
   }
   const staff = await tx.staff.findMany({ where: { isActive: true }, select: { id: true, firstName: true, lastName: true } });
   const qualifications = await tx.staffService.findMany({ where: { isActive: true, serviceId: { in: services.map(s => s.id) } }, select: { staffId: true, serviceId: true, commissionRate: true } });

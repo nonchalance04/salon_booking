@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderEmailLayout } from "../src/modules/notifications/email-layout.js";
+import { renderSimpleEmailLayout } from "../src/modules/notifications/simple-email-layout.js";
 import { renderNotification } from "../src/modules/notifications/templates.js";
 
 test("email layout escapes dynamic content including titles, details and codes", () => {
   const unsafe = '<script>alert("test")</script>&';
-  const html = renderEmailLayout({ title: unsafe, text: unsafe, bookingCode: unsafe, when: unsafe, verificationCode: unsafe });
-  assert.ok(!html.includes("<script>"));
-  assert.ok(html.includes("&lt;script&gt;alert(&quot;test&quot;)&lt;/script&gt;&amp;"));
+  for (const render of [renderEmailLayout, renderSimpleEmailLayout]) {
+    const html = render({ title: unsafe, text: unsafe, bookingCode: unsafe, when: unsafe, verificationCode: unsafe });
+    assert.ok(!html.includes("<script>"));
+    assert.ok(html.includes("&lt;script&gt;alert(&quot;test&quot;)&lt;/script&gt;&amp;"));
+  }
 });
 
 test("all notification events receive HTML without exposing private payload fields", () => {

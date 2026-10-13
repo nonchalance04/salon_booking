@@ -51,9 +51,9 @@ For the full local setup and live acceptance procedure, including SMS channel se
 
 Confirmation SMS contains fee-paid confirmation, the booking code and appointment date/time in the salon timezone, without links. Existing private links remain valid and OTP access remains supported. New confirmations do not create guest access sessions.
 
-The combined text is ASCII and limited to 160 characters. Excessively long booking details cause `SMS_CONTENT_TOO_LONG` rather than a split SMS. No public origin or link secret is needed to render a confirmation. Obsolete confirmations are skipped.
+The confirmation greets the customer by full name and includes the full appointment date, start–end time range and booking code as the reference number. It uses the requested welcome and arrival guidance. This longer text, including the en dash and any Unicode customer names, may be delivered as multiple SMS segments by the provider. One message request is submitted; the previous 160-character limit no longer applies. No public origin or link secret is needed to render a confirmation. Obsolete confirmations and confirmations without a verified fee payment are skipped under all SMS policies.
 
-Minimal SMS sends are not automatically retried after provider errors or a reclaimed in-flight claim. This limits duplicate sends at the cost of requiring manual investigation if delivery is uncertain. Email retry behavior is unchanged. Skipped jobs retain their history; sent messages are never resent by changing policy. Setting `NOTIFICATION_SMS_POLICY=all` restores legacy behavior for future jobs, so keep `minimal` for reduced SMS use.
+Minimal SMS sends are not automatically retried after provider errors or a reclaimed in-flight claim. This limits duplicate sends at the cost of requiring manual investigation if delivery is uncertain. Email retry behavior is unchanged. Skipped jobs retain their history; sent messages are never resent by changing policy. Setting `NOTIFICATION_SMS_POLICY=all` enables additional legacy notification events for future jobs; paid-booking confirmations still use the personalized template and payment checks. Keep `minimal` for reduced SMS use.
 
 Restart the API and notification worker after applying the `notification_skipped` migration and rebuilding. Do not start a worker against an unmigrated database.
 

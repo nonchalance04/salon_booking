@@ -9,7 +9,7 @@ import { createChatbotLimiter } from "../src/modules/chatbot/chatbot.limit.js";
 import { ApiError } from "../src/shared/http.js";
 
 const config = { GEMINI_API_KEY: "test-secret", GEMINI_MODEL: "test-model", CHATBOT_TIMEOUT_MS: 1000 };
-const service = { id: "service-1", name: "Hair Treatment", description: "Care for dry hair", price: new Prisma.Decimal("1500"), durationMinutes: 60 };
+const service = { id: "service-1", name: "Hair Treatment", category: "Hair", description: "Care for dry hair", price: new Prisma.Decimal("1500"), durationMinutes: 60 };
 const source = { publicServices: async () => [service], publicSalon: async () => ({ profile: null, timeZone: "Asia/Manila", hours: [], closures: [] }), publicPolicy: async () => null };
 const decision = { intent: "consultation", answer: "What changed before your hair became dry?", recommendations: [] };
 // Web Response and Express Response have different meanings; use the runtime global explicitly below.

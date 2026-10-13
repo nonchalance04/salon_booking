@@ -206,7 +206,7 @@ test("minimal SMS sends one combined confirmation and skips old separate notific
   const messages: NotificationMessage[] = [];
   const worker = service(createTestNotificationProvider(m => messages.push(m)), { smsPolicy: "minimal", publicSiteUrl: "https://salon.example.com", bookingLinkSecret: "s".repeat(32) });
   while (await worker.processNext()) { /* drain without real SMS */ }
-  assert.equal(messages.length, 1); assert.match(messages[0]!.text, /Fee paid.*Confirmed/);
+  assert.equal(messages.length, 1); assert.match(messages[0]!.text, /^Hello, Test Guest!\n\nYour appointment at Clique Salon has been successfully confirmed, and your appointment fee has been received\./);
   assert.equal((await stored(confirmation.id)).status, "SENT");
   for (const row of others) { assert.equal((await stored(row.id)).status, "SKIPPED"); assert.equal((await stored(row.id)).lastError, "SMS_MINIMAL_POLICY"); }
   assert.ok(messages[0]!.text.includes(booking.bookingCode));
@@ -224,6 +224,25 @@ test("minimal policy generates no separate reminders and preserves SMS cancellat
   while (await worker.processNext()) { /* drain */ }
   assert.equal(messages.filter(m => m.channel === "SMS").length, 1);
   assert.match(messages.find(m => m.channel === "SMS")!.text, /cancelled/);
+});
+
+test("every SMS policy requires verified fee payment before sending the personalized confirmation", async () => {
+  for (const smsPolicy of ["minimal", "single", "all"] as const) {
+    const booking = await appointment({}, null);
+    const messages: NotificationMessage[] = [];
+    const worker = service(createTestNotificationProvider(m => messages.push(m)), { smsPolicy });
+    const unpaid = await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
+    await worker.processNext();
+    assert.equal((await stored(unpaid.id)).lastError, "CONFIRMATION_PAYMENT_UNVERIFIED");
+    assert.equal(messages.length, 0);
+    await prisma.payment.create({ data: { appointmentId: booking.id, type: "APPOINTMENT_FEE", status: "SUCCEEDED", satisfiesObligation: true, amount: "100.00", method: "CASH", provider: "manual", idempotencyKey: randomUUID(), externalReference: randomUUID(), paidAt: new Date() } });
+    await queue({ appointmentId: booking.id, channel: "SMS", recipient: "09171234567" });
+    await worker.processNext();
+    assert.equal(messages.length, 1);
+    assert.match(messages[0]!.text, /^Hello, Test Guest!/);
+    assert.ok(messages[0]!.text.includes(`Reference Number: ${booking.bookingCode}`));
+    assert.match(messages[0]!.text, /Time: \d{1,2}:\d{2} [AP]M – \d{1,2}:\d{2} [AP]M/);
+  }
 });
 
 test("minimal SMS avoids retries on uncertain delivery or reclaimed claims", async () => {

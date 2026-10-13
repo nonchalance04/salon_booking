@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { PrismaClient } from "../../../generated/prisma/client.js";
 import { validateRequest } from "../../shared/http.js";
 import { browserSecurity, type AuthConfig } from "../auth/auth.security.js";
-import { appointmentListQuery, bookingSchema, guestAccessSchema, changeSchema, changeSearchSchema, cancellationSchema } from "./appointments.schema.js";
+import { noShowCorrectionSchema, appointmentListQuery, bookingSchema, guestAccessSchema, changeSchema, changeSearchSchema, cancellationSchema } from "./appointments.schema.js";
 import { createAppointmentsService } from "./appointments.service.js";
 import { createAppointmentChangesService } from "./appointment-changes.service.js";
 import { createAuthMiddleware } from "../auth/auth.middleware.js";
@@ -37,6 +37,12 @@ export function createAppointmentsRouter(prisma: PrismaClient, config: AuthConfi
   });
   router.get("/appointments", auth.authenticate, auth.adminOnly, validateRequest(z.object({ query: appointmentListQuery })), async (_req, res) => {
     res.json(await changes.list(res.locals.user.id, res.locals.validated.query.cursor, res.locals.validated.query));
+  });
+  router.post("/appointments/no-show/correct", auth.authenticate, auth.adminOnly, validateRequest(z.object({ body: noShowCorrectionSchema })), async (_req, res) => {
+    res.json(await changes.correctNoShow(res.locals.user.id, res.locals.validated.body));
+  });
+  router.post("/appointments/check-in", auth.authenticate, validateRequest(z.object({ body: z.object({ bookingCode: z.string().trim().min(1).max(100) }).strict() })), async (_req, res) => {
+    res.json(await changes.checkIn(res.locals.user.id, res.locals.validated.body.bookingCode));
   });
   router.post("/appointments/no-show", auth.authenticate, auth.adminOnly, validateRequest(z.object({ body: z.object({ bookingCode: z.string().min(1).max(100) }).strict() })), async (_req, res) => {
     res.json(await changes.markNoShow(res.locals.user.id, res.locals.validated.body.bookingCode));

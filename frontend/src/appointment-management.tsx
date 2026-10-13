@@ -1,3 +1,6 @@
+import { WaitingQueue } from "./waiting-queue";
+import { NoShowCorrection } from "./no-show-correction";
+import { AppointmentCheckIn } from "./appointment-check-in";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { Appointment } from "./booking";
@@ -26,10 +29,10 @@ export function AppointmentManagement({ appointment, token, onChange }: { appoin
   const generation = useRef(0);
   const policy = appointment.bookingPolicyVersion;
   const now = Date.parse(appointment.serverTime);
-  const canChange = appointment.rescheduleCount < policy.maxReschedules && (recovery
+  const canChange = !appointment.checkedInAt && appointment.rescheduleCount < policy.maxReschedules && (recovery
     ? !appointment.recoveryAppointment && now <= Date.parse(appointment.startAt) + policy.noShowGraceHours * 3_600_000
     : appointment.status === "CONFIRMED" && now <= Date.parse(appointment.startAt) - policy.rescheduleCutoffHours * 3_600_000);
-  const canCancel = appointment.status === "CONFIRMED" && now <= Date.parse(appointment.startAt) - policy.cancellationCutoffHours * 3_600_000;
+  const canCancel = !appointment.checkedInAt && appointment.status === "CONFIRMED" && now <= Date.parse(appointment.startAt) - policy.cancellationCutoffHours * 3_600_000;
   const format = (value: string) => new Intl.DateTimeFormat(undefined, { timeZone: appointment.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   function invalidate() { generation.current++; setSlots(null); setStartAt(""); }
   async function open() {
@@ -133,6 +136,7 @@ export function AdminAppointments({ initialFilters = {}, onPayment, onSettlement
   const format = (row: Appointment) => new Intl.DateTimeFormat("en-PH", { timeZone: row.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(row.startAt));
   return <section aria-labelledby="appointments-title">
     <div className="section-heading"><div><h2 id="appointments-title">Appointments</h2><p className="muted">Filter all bookings{zone ? ` in ${zone}` : ""}. Open a booking to review details and available actions.</p></div><button disabled={busy} onClick={() => void load()}>Refresh appointments</button></div>
+    {onSettlement && <WaitingQueue onSelect={onSettlement} />}
     <form className="account-form admin-appointment-filters" onSubmit={event => {
       event.preventDefault(); const form = new FormData(event.currentTarget);
       const next = Object.fromEntries(["from", "to", "status", "staffId", "search", "attention"].map(key => [key, String(form.get(key) ?? "").trim()]).filter(([, value]) => value)) as AppointmentFilters;
@@ -160,10 +164,12 @@ export function AdminAppointments({ initialFilters = {}, onPayment, onSettlement
       <ol>{current.appointmentServices.map(service => <li key={service.id}>{service.serviceNameSnapshot} · {service.staff.firstName} {service.staff.lastName} · PHP {service.priceSnapshot}</li>)}</ol>
       <p>Appointment fee: PHP {current.appointmentFeeAmount}{current.carriedAppointmentFeePaymentId ? " · carried credit" : ""}</p>
       {current.status === "PENDING_PAYMENT" && current.holdExpiresAt && <p>Payment hold {Date.parse(current.holdExpiresAt) < Date.parse(current.serverTime) ? "expired" : "expires"} at {new Intl.DateTimeFormat("en-PH", { timeZone: current.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(current.holdExpiresAt))}.</p>}
+      {current.status === "CONFIRMED" && <AppointmentCheckIn bookingCode={current.bookingCode} customerName={`${current.customer.firstName} ${current.customer.lastName}`} startAt={current.startAt} checkedInAt={current.checkedInAt} checkedInByUser={current.checkedInByUser} timeZone={current.timeZone} disabled={busy} onCheckedIn={() => { setMarking(null); void load(); }} />}
       <div className="actions">{onPayment && <button disabled={busy} onClick={() => onPayment(current.bookingCode)}>Review appointment fee</button>}{onSettlement && ["CONFIRMED", "COMPLETED"].includes(current.status) && <button className="primary" disabled={busy} onClick={() => onSettlement(current.bookingCode)}>{current.status === "COMPLETED" ? "View settlement / receipt" : "Settle services"}</button>}
-      {current.status === "CONFIRMED" && Date.parse(current.startAt) <= Date.parse(current.serverTime) && <button disabled={busy} onClick={() => setMarking(current.bookingCode)}>Mark no-show</button>}</div>
+      {current.status === "CONFIRMED" && !current.checkedInAt && Date.parse(current.startAt) <= Date.parse(current.serverTime) && <button disabled={busy} onClick={() => setMarking(current.bookingCode)}>Mark no-show</button>}</div>
+      {current.status === "NO_SHOW" && !current.recoveryAppointment && <NoShowCorrection key={current.bookingCode} bookingCode={current.bookingCode} customerName={`${current.customer.firstName} ${current.customer.lastName}`} disabled={busy} onCorrected={() => void load()} />}
       {current.status === "CONFIRMED" && <p className="admin-note muted">Rescheduling follows the booking’s original policy. Changes used: {current.rescheduleCount} / {current.bookingPolicyVersion.maxReschedules}.</p>}
-      {marking === current.bookingCode && <div className="admin-warning"><p>Confirm the customer failed to appear according to salon procedure. This releases the reservation and preserves the missed visit.</p><div className="actions"><button disabled={busy} onClick={() => void mark(current.bookingCode)}>Confirm no-show</button><button disabled={busy} onClick={() => setMarking(null)}>Keep confirmed</button></div></div>}
+      {marking === current.bookingCode && !current.checkedInAt && <div className="admin-warning"><p>Confirm the customer failed to appear according to salon procedure. This releases the reservation and preserves the missed visit.</p><div className="actions"><button disabled={busy} onClick={() => void mark(current.bookingCode)}>Confirm no-show</button><button disabled={busy} onClick={() => setMarking(null)}>Keep confirmed</button></div></div>}
     </article>}
   </section>;
 }

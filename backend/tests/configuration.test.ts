@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { coversReservation, overlaps } from "../src/modules/scheduling/coverage.js";
-import { serviceSchema, qualificationSchema, hoursSchema, scheduleSchema, policySchema, closureSchema } from "../src/modules/configuration/configuration.schema.js";
+import { staffSkillsSchema, serviceSchema, qualificationSchema, hoursSchema, scheduleSchema, policySchema, closureSchema } from "../src/modules/configuration/configuration.schema.js";
 
 const time = (value: string) => new Date(`1970-01-01T${value}:00Z`);
 test("weekly coverage uses salon-local weekdays, full buffers, and contiguous window unions", () => {
@@ -43,4 +43,17 @@ test("public staff profiles validate images, ratings, limits, and fields", async
   assert.equal(staffPublicProfileSchema.safeParse({ ...profile, reviews: [{ author: "Client", rating: 6, text: "Great" }] }).success, false);
   assert.equal(staffPublicProfileSchema.safeParse({ ...profile, languages: Array(11).fill("English") }).success, false);
   assert.equal(staffPublicProfileSchema.safeParse({ ...profile, appointmentsCompleted: 99 }).success, false);
+});
+
+test("staff skill inputs reject duplicate services and invalid commission rates", () => {
+  const item = { serviceId: "10000000-0000-4000-8000-000000000001", commissionRate: "0.4" };
+  assert.equal(staffSkillsSchema.safeParse({ services: [] }).success, true);
+  assert.equal(staffSkillsSchema.safeParse({ services: [item] }).success, true);
+  assert.equal(staffSkillsSchema.safeParse({ services: [item, item] }).success, false);
+  for (const commissionRate of ["1.01", "-0.1", "NaN", "0.12345", 0.4]) {
+    assert.equal(staffSkillsSchema.safeParse({ services: [{ ...item, commissionRate }] }).success, false);
+  }
+  const input = { name: "Manicure", description: null, price: "120.00", durationMinutes: 30, bufferMinutes: null, isActive: true };
+  assert.equal(serviceSchema.parse({ ...input, category: " Nails " }).category, "Nails");
+  assert.equal(serviceSchema.safeParse({ ...input, category: " " }).success, false);
 });

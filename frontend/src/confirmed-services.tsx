@@ -1,9 +1,10 @@
+import { AppointmentCheckIn } from "./appointment-check-in";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api } from "./api";
 
 type ConfirmedBookings = {
   timeZone: string; page: number; pageSize: number; total: number;
-  rows: { bookingCode: string; startAt: string; customer: { firstName: string; lastName: string };
+  rows: { bookingCode: string; startAt: string; checkedInAt: string | null; checkedInByUser: { firstName: string; lastName: string } | null; customer: { firstName: string; lastName: string };
     appointmentServices: { id: string; serviceNameSnapshot: string; priceSnapshot: string; outcome: string;
       staff: { firstName: string; lastName: string } }[] }[];
 };
@@ -45,7 +46,7 @@ export function ConfirmedServices({ admin, onSelect, disabled = false }: { admin
         <td>{new Intl.DateTimeFormat("en-PH", { timeZone: data.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(row.startAt))}<br /><small>{row.bookingCode}</small></td>
         <td><strong>{row.customer.firstName} {row.customer.lastName}</strong><br /><span className="badge active">Confirmed</span></td>
         <td>{row.appointmentServices.map(service => <div key={service.id}>{service.serviceNameSnapshot} · PHP {service.priceSnapshot}<br /><small>{service.staff.firstName} {service.staff.lastName} · {service.outcome.replaceAll("_", " ")}</small></div>)}</td>
-        <td><button disabled={disabled || busy} onClick={() => onSelect(row.bookingCode)}>{admin ? "Review services" : "Process payment"}</button></td>
+        <td><AppointmentCheckIn bookingCode={row.bookingCode} customerName={`${row.customer.firstName} ${row.customer.lastName}`} startAt={row.startAt} checkedInAt={row.checkedInAt} checkedInByUser={row.checkedInByUser} timeZone={data.timeZone} disabled={disabled || busy} onCheckedIn={() => setRefresh(value => value + 1)} /><button disabled={disabled || busy} onClick={() => onSelect(row.bookingCode)}>{admin ? "Review services" : "Process payment"}</button></td>
       </tr>)}</tbody></table></div> : <p>{search ? "No confirmed bookings match your search." : "No confirmed services awaiting settlement."}</p>}
       <div className="actions cashier-pagination"><button disabled={disabled || busy || page === 1} onClick={() => { setData(null); setPage(value => value - 1); }}>Previous</button><span>Page {page} of {Math.max(1, Math.ceil(data.total / data.pageSize))}</span><button disabled={disabled || busy || page * data.pageSize >= data.total} onClick={() => { setData(null); setPage(value => value + 1); }}>Next</button></div>
     </>}
