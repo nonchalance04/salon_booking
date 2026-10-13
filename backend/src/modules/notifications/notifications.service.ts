@@ -158,7 +158,7 @@ export function createNotificationsService(
           return;
         }
       }
-      let message = renderNotification(row, options.timeZone);
+      let message = renderNotification(row, options.timeZone, options.publicSiteUrl);
       if (
         row.channel === "SMS" &&
         row.eventType === "BOOKING_CONFIRMED"
