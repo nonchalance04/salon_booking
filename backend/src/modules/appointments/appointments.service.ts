@@ -18,6 +18,9 @@ export async function reservationTransaction<T>(prisma: PrismaClient, work: (tx:
       }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 20_000 });
     } catch (error) {
       if (error instanceof RestartReservation) continue;
+      // Retry short-reference collisions with fresh credentials after rollback.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" &&
+        Array.isArray(error.meta?.target) && error.meta.target.includes("bookingCode")) continue;
       if (error instanceof Prisma.PrismaClientKnownRequestError &&
         (["P2028", "P2034"].includes(error.code) || ["55P03", "40P01"].includes(String(error.meta?.code)))) throw busy();
       throw error;
@@ -61,8 +64,8 @@ export function createAppointmentsService(prisma: PrismaClient, timeZone: string
       const day = localDay(input.date, timeZone);
       const start = new Date(input.startAt);
       if (start < day.start || start >= day.end) throw new ApiError(400, "INVALID_DATE", "The starting time must fall on the selected salon-local date.");
-      const credentials = createGuestCredentials();
       return reservationTransaction(prisma, async tx => {
+        const credentials = createGuestCredentials();
         // The small-salon lock set includes all existing staff, so ANY_AVAILABLE
         // workload comparisons and configuration writes use the same protection.
         const lockedIds = (await tx.staff.findMany({ select: { id: true } })).map(s => s.id);

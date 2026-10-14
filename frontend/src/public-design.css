@@ -62,6 +62,7 @@
 .customer-site .guest-appointment .manage-panel { max-width:1000px; margin:auto; }
 .customer-site .salon-guide { max-width:1000px; }
 .customer-site .salon-art { position:relative; overflow:hidden; min-height:495px; background:linear-gradient(135deg,#ddcfb2,#b5a187 50%,#6b7167); }
+.customer-site .salon-art img { width:100%; height:100%; min-height:inherit; object-fit:cover; display:block; }
 .customer-site .art-mirror { position:absolute; width:52%; height:76%; left:24%; top:8%; border-radius:48% 48% 2% 2%; border:12px solid #d8bf80; background:linear-gradient(120deg,#fff8e5aa,#bbc5b799 45%,#f5ecd555); box-shadow:0 0 45px #fff5d599; }
 .customer-site .art-chair { position:absolute; width:42%; height:26%; left:29%; bottom:7%; border-radius:30px 30px 8px 8px; background:#3c4942; box-shadow:0 15px 0 -8px #9c8b6e; }
 .customer-site .art-caption { position:absolute; bottom:24px; left:30px; color:white; font-size:12px; }

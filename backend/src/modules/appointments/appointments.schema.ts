@@ -11,7 +11,7 @@ export const bookingSchema = availabilitySchema.extend({
   }).strict(),
 }).strict();
 export const guestAccessSchema = z.object({
-  bookingCode: z.string().regex(/^SL-[A-F0-9]{24}$/),
+  bookingCode: z.string().regex(/^SL-(?:[A-Z0-9]{6}|[A-F0-9]{24})$/),
   token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
 }).strict();
 export type BookingInput = z.infer<typeof bookingSchema>;

@@ -455,8 +455,8 @@ export function createAppointmentChangesService(
      * - Perform a final pre-commit double-check against current time to eliminate race conditions.
      */
     async change(input: ChangeInput) {
-      const credentials = createGuestCredentials();
       return reservationTransaction(prisma, async (tx) => {
+        const credentials = createGuestCredentials();
         const { row, lockedIds } = await lockAppointment(
           tx,
           input.bookingCode,

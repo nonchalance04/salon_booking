@@ -1,8 +1,8 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 export const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 export function createGuestCredentials() {
   const token = randomBytes(32).toString("base64url");
-  return { token, hash: tokenHash(token), bookingCode: `SL-${randomBytes(12).toString("hex").toUpperCase()}` };
+  return { token, hash: tokenHash(token), bookingCode: `SL-${randomInt(36 ** 6).toString(36).toUpperCase().padStart(6, "0")}` };
 }
 export function validGuestToken(token: string, hash: string) {
   const actual = Buffer.from(tokenHash(token), "hex");

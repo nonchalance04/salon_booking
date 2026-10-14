@@ -5,6 +5,7 @@ import { createGuestCredentials, tokenHash, validGuestToken } from "../src/modul
 test("guest credentials have independent random entropy and constant-length hashed storage", () => {
   const a = createGuestCredentials(); const b = createGuestCredentials();
   assert.notEqual(a.token, b.token); assert.notEqual(a.bookingCode, b.bookingCode);
+  assert.match(a.bookingCode, /^SL-[A-Z0-9]{6}$/);
   assert.equal(a.hash.length, 64); assert.equal(a.hash, tokenHash(a.token));
   assert.ok(validGuestToken(a.token, a.hash)); assert.ok(!validGuestToken(b.token, a.hash));
   assert.ok(!validGuestToken(a.token, "malformed"));
@@ -17,4 +18,14 @@ test("booking validation accepts contact details, requires an exact start, and r
   assert.ok(!bookingSchema.safeParse({ ...input, startAt: undefined }).success);
   assert.ok(!bookingSchema.safeParse({ ...input, status: "CONFIRMED" }).success);
   assert.ok(!bookingSchema.safeParse({ ...input, customer: { ...input.customer, id: "injected" } }).success);
+});
+
+test("guest access preserves historical references and validates short references", () => {
+  const { token } = createGuestCredentials();
+  for (const bookingCode of ["SL-A7K2Q9", `SL-${"A".repeat(24)}`]) {
+    assert.ok(guestAccessSchema.safeParse({ bookingCode, token }).success);
+  }
+  for (const bookingCode of ["SL-ABCDE", "SL-ABCDEFG", "SL-abc123", "SL-ABC!23"]) {
+    assert.ok(!guestAccessSchema.safeParse({ bookingCode, token }).success);
+  }
 });
