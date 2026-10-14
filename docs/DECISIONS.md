@@ -436,6 +436,10 @@ Add an authenticated read-only queue for Cashier/Admin using existing arrival an
 
 Add an editable Service category and a per-staff grouped checkbox editor. Keep StaffService as the sole qualification authority, including commission rates. Save the complete selected service set in one transaction under existing salon/staff locks; deactivate omitted qualifications, reuse existing records when re-enabled, audit changed records, and reject the entire save if it would invalidate blocking reservations. Categories do not automatically qualify staff for other services in the same category.
 
+## 2026-10-14 — Independent menu booking categories
+
+Use Hair Services, Hair Color & Styling, Hair Treatments, Nail Services, and Spa & Relaxation as independent booking categories. Customers may combine one service from each category in a single appointment. Preserve one-service-per-category validation for direct booking, availability, rescheduling, and recovery requests. Split legacy Hair/Nails classifications using approved menu descriptions, preserve custom classifications and historical appointment snapshots, and seed the same categories for new databases. Staff qualifications remain specific to individual service IDs.
+
 
 ## 2026-10-13 — Personalized confirmation SMS
 

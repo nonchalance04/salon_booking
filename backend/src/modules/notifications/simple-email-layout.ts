@@ -7,8 +7,8 @@ function escapeHtml(value: string): string {
 }
 
 /** Initial email layout: a plain white page with readable text and details. */
-export function renderSimpleEmailLayout(options: Parameters<typeof renderEmailLayout>[0]): string {
-  const { title, text, bookingCode, when, verificationCode } = options;
+export function renderSimpleEmailLayout(options: Parameters<typeof renderEmailLayout>[0] & { appointmentUrl?: string }): string {
+  const { title, text, bookingCode, when, verificationCode, appointmentUrl } = options;
   const paragraphs = text.split(/\n\n+/).map(paragraph =>
     `<p style="margin:0 0 16px;">${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
   ).join("");
@@ -25,6 +25,7 @@ export function renderSimpleEmailLayout(options: Parameters<typeof renderEmailLa
 ${paragraphs}
 ${bookingCode ? detail("Booking reference", bookingCode) : ""}
 ${when ? detail("Appointment time", when) : ""}
+${appointmentUrl ? `<p style="margin:24px 0 8px;"><a href="${escapeHtml(appointmentUrl)}" style="color:#203c34;font-weight:700;text-decoration:underline;">Your Appointment</a></p><p style="margin:0 0 16px;">View and manage your appointment details. Verify your email or phone number to access your appointment.</p>` : ""}
 ${verificationCode ? `<p style="margin:24px 0 8px;">Your verification code:</p><p style="margin:0 0 24px;font-size:32px;font-weight:700;letter-spacing:4px;">${escapeHtml(verificationCode)}</p>` : ""}
 </div><!--[if mso]></td></tr></table><![endif]-->
 </td></tr></table></body></html>`;

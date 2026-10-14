@@ -129,6 +129,26 @@ test("booking atomically snapshots sequential services, fixed fee, hold, and has
   await assert.rejects(bookings.retrieve("SL-" + "0".repeat(24), result.guestToken), { code: "APPOINTMENT_NOT_FOUND" });
 });
 
+test("direct requests allow haircut, color and treatment together but reject two color variants", async () => {
+  const f = await bookingFixture();
+  await prisma.service.update({ where: { id: f.item.id }, data: { category: "Hair Services" } });
+  const extras = [];
+  for (const category of ["Hair Color & Styling", "Hair Treatments"]) {
+    const service = await prisma.service.create({ data: { name: category, category, price: "200.00", durationMinutes: 30, bufferMinutes: 15 } });
+    await prisma.staffService.create({ data: { staffId: f.staff.id, serviceId: service.id, commissionRate: "0.4" } });
+    extras.push({ ...f.input.services[0]!, serviceId: service.id });
+  }
+  const request = { ...f.input, services: [...f.input.services, ...extras] };
+  const availability = createAvailabilityService(prisma, "Asia/Manila");
+  assert.ok((await availability.search(request)).slots.length > 0);
+  const alternate = await prisma.service.create({ data: { name: "Long color", category: " hair color & styling ", price: "300.00", durationMinutes: 30 } });
+  const duplicate = { ...request, services: [...request.services, { serviceId: alternate.id, assignmentMode: "ANY_AVAILABLE" as const }] };
+  await assert.rejects(availability.search(duplicate), { code: "DUPLICATE_SERVICE_CATEGORY" });
+  await assert.rejects(bookings.book(duplicate), { code: "DUPLICATE_SERVICE_CATEGORY" });
+  const result = await bookings.book(request);
+  assert.equal(result.appointment.appointmentServices.length, 3);
+});
+
 test("direct booking and availability requests reject duplicate services and categories without writes", async () => {
   const f = await bookingFixture();
   const other = await prisma.service.create({ data: { name: "Same category", category: " other ", price: "120.00", durationMinutes: 30 } });

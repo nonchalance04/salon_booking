@@ -40,6 +40,7 @@ export function renderNotification(
     "id" | "channel" | "recipient" | "eventType" | "payload"
   >,
   timeZone: string,
+  publicSiteUrl?: string,
 ): NotificationMessage {
   const parsed = notificationPayload.safeParse(row.payload);
   if (!parsed.success) throw new NotificationFailure("INVALID_PAYLOAD", false);
@@ -101,15 +102,17 @@ export function renderNotification(
       text = `Your appointment is scheduled for ${when}.`;
       break;
   }
+  const appointmentUrl = row.channel === "EMAIL" && row.eventType === "BOOKING_CONFIRMED" && publicSiteUrl
+    ? new URL("/appointment", publicSiteUrl).href : undefined;
   return {
     id: row.id,
     channel: row.channel,
     recipient:
       row.channel === "SMS" ? smsRecipient(row.recipient) : row.recipient,
     subject,
-    text: `Booking ${p.bookingCode}: ${text}`,
+    text: `Booking ${p.bookingCode}: ${text}${appointmentUrl ? `\n\nYour Appointment: ${appointmentUrl}\nView and manage your appointment details. Verify your email or phone number to access your appointment.` : ""}`,
     ...(row.channel === "EMAIL" ? { html: renderSimpleEmailLayout({
-      title: subject, text, bookingCode: p.bookingCode, when,
+      title: subject, text, bookingCode: p.bookingCode, when, appointmentUrl,
     }) } : {}),
   };
 }

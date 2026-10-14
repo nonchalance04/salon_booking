@@ -9,7 +9,7 @@ export const definitions: Record<Section, { title: string; singular: string; des
     { key: "name", label: "Salon name" }, { key: "address", label: "Address" }, { key: "phone", label: "Phone", optional: true }, { key: "email", label: "Email", type: "email", optional: true },
   ] },
   services: { title: "Services", singular: "service", description: "Manage your service menu. Existing bookings keep their original prices and durations.", fields: [
-    { key: "name", label: "Service name" }, { key: "category", label: "Skill category (e.g. Hair, Nails)", initial: "Other" }, { key: "description", label: "Description", optional: true }, { key: "price", label: "Price (PHP)", type: "money", min: .01 },
+    { key: "name", label: "Service name" }, { key: "category", label: "Booking category (e.g. Hair Services, Hair Treatments)", initial: "Other" }, { key: "description", label: "Description", optional: true }, { key: "price", label: "Price (PHP)", type: "money", min: .01 },
     { key: "durationMinutes", label: "Duration (minutes)", type: "number", min: 1 }, { key: "bufferMinutes", label: "Buffer (minutes; blank uses booking policy)", type: "number", optional: true }, active,
   ] },
   staff: { title: "Staff", singular: "staff member", description: "Manage staff and their skills. Use Manage skills to choose exactly which services each person can perform.", fields: [
