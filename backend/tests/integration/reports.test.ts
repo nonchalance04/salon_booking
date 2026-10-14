@@ -133,6 +133,17 @@ test("confirmed services load across all dates for both roles, with search, pagi
   assert.equal((await reports.confirmedServices(cashier.id, { ...query, page: 2 })).rows[0]!.bookingCode, second.bookingCode);
   assert.equal((await reports.confirmedServices(cashier.id, { ...query, search: "queuejamie queuesantos" })).rows[0]!.bookingCode, first.bookingCode);
   assert.doesNotMatch(JSON.stringify(result), /private-phone|guestAccess|commission|password|Removed service/);
+  const paymentQuery = { ...query, paymentReady: "true" as const };
+  assert.equal((await reports.confirmedServices(cashier.id, paymentQuery)).total, 0);
+  await prisma.appointmentService.updateMany({ where: { appointmentId: first.id, membershipStatus: "ACTIVE" }, data: { outcome: "NOT_PERFORMED", actualChargedAmount: "0" } });
+  assert.equal((await reports.confirmedServices(cashier.id, paymentQuery)).total, 0);
+  await prisma.appointmentService.updateMany({ where: { appointmentId: first.id, membershipStatus: "ACTIVE" }, data: { outcome: "PERFORMED", actualChargedAmount: "50" } });
+  const ready = await reports.confirmedServices(cashier.id, paymentQuery);
+  assert.equal(ready.total, 1); assert.equal(ready.rows[0]!.bookingCode, first.bookingCode);
+  const pending = await prisma.appointmentService.create({ data: { ...serviceData, sequenceNo: 3 } });
+  assert.equal((await reports.confirmedServices(cashier.id, paymentQuery)).total, 0);
+  await prisma.appointmentService.update({ where: { id: pending.id }, data: { outcome: "NOT_PERFORMED", actualChargedAmount: "0" } });
+  assert.equal((await reports.confirmedServices(cashier.id, paymentQuery)).total, 1);
   await prisma.appointment.update({ where: { id: first.id }, data: { status: "COMPLETED", completionType: "NO_SERVICE_CLOSURE", completedAt: new Date() } });
   assert.equal((await reports.confirmedServices(cashier.id, query)).total, 1);
   await prisma.user.update({ where: { id: cashier.id }, data: { isActive: false } });

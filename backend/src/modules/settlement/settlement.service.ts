@@ -11,11 +11,11 @@ const include = { customer: true, appointmentServices: { where: { membershipStat
 type Row = Prisma.AppointmentGetPayload<{ include: typeof include }>;
 const fail = (code: string, message: string) => new ApiError(409, code, message);
 function revision(row: Row) { return createHash("sha256").update(JSON.stringify([row.status, row.updatedAt, row.appointmentServices.map(s => [s.id, s.updatedAt, s.outcome, s.actualChargedAmount, s.staffId])])).digest("hex"); }
-async function authorize(tx: Tx, id: string, cashierOnly = false) {
+async function authorize(tx: Tx, id: string, requiredRole?: "ADMIN" | "CASHIER") {
   await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${id}::uuid FOR SHARE`;
   const actor = await tx.user.findUnique({ where: { id } });
   if (!actor?.isActive) throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
-  if (cashierOnly && actor.role !== "CASHIER") throw new ApiError(403, "FORBIDDEN", "Cashier access is required for settlement.");
+  if (requiredRole && actor.role !== requiredRole) throw new ApiError(403, "FORBIDDEN", `${requiredRole === "ADMIN" ? "Administrator" : "Cashier"} access is required.`);
   return actor;
 }
 async function locked(tx: Tx, code: string) {
@@ -65,12 +65,10 @@ export function createSettlementService(prisma: PrismaClient) {
     async outcomes(actorId: string, raw: OutcomesInput) {
       const input = outcomesSchema.parse(raw);
       return transact(async tx => {
-        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId); editable(row, input.revision);
+        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, "ADMIN"); editable(row, input.revision);
         if (new Set(input.services.map(s => s.id)).size !== row.appointmentServices.length || input.services.length !== row.appointmentServices.length || input.services.some(s => !row.appointmentServices.some(r => r.id === s.id))) throw fail("INVALID_SERVICES", "Submit each active service exactly once.");
         for (const s of row.appointmentServices) {
           const outcome = input.services.find(i => i.id === s.id)!.outcome;
-          if (actor.role === "ADMIN" && s.outcome === "SCHEDULED") throw new ApiError(403, "FORBIDDEN", "A Cashier must first record service outcomes.");
-          if (actor.role === "CASHIER" && s.outcome !== "SCHEDULED" && s.outcome !== outcome) throw new ApiError(403, "FORBIDDEN", "Ask an Admin to correct recorded outcomes.");
           if (outcome === "PERFORMED" && !s.priceSnapshot.gt(0)) throw fail("INVALID_SERVICE_CHARGE", "Performed services must have a positive historical price.");
           await tx.appointmentService.update({ where: { id: s.id }, data: { outcome, actualChargedAmount: outcome === "PERFORMED" ? s.priceSnapshot : "0.00" } });
         }
@@ -83,7 +81,7 @@ export function createSettlementService(prisma: PrismaClient) {
       // Reuse the same salon reference when a payment request is retried.
       const reference = input.externalReference ?? `SALON-SERVICE-${input.idempotencyKey}`;
       return transact(async tx => {
-        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, true);
+        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, "CASHIER");
         const key = `settlement:${input.idempotencyKey}`;
         const matches = await tx.payment.findMany({ where: { OR: [{ idempotencyKey: key }, { provider: "manual", externalReference: reference }] } });
         if (matches.length) {
@@ -117,12 +115,12 @@ export function createSettlementService(prisma: PrismaClient) {
     async close(actorId: string, raw: { bookingCode: string; revision: string }) {
       const input = revisionSchema.strict().parse(raw);
       return transact(async tx => {
-        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, true);
-        if (row.status === "COMPLETED" && row.completionType === "NO_SERVICE_CLOSURE") return view(tx, row, false);
+        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, "ADMIN");
+        if (row.status === "COMPLETED" && row.completionType === "NO_SERVICE_CLOSURE") return view(tx, row, true);
         editable(row, input.revision);
         if (row.appointmentServices.some(s => s.outcome !== "NOT_PERFORMED")) throw fail("NO_SERVICE_CLOSURE_NOT_ALLOWED", "Every active service must be recorded as not performed.");
         await complete(tx, row, actor, "NO_SERVICE_CLOSURE", await freshTime(tx));
-        return view(tx, await tx.appointment.findUniqueOrThrow({ where: { id: row.id }, include }), false);
+        return view(tx, await tx.appointment.findUniqueOrThrow({ where: { id: row.id }, include }), true);
       });
     },
   };

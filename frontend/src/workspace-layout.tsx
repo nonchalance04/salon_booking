@@ -8,6 +8,7 @@ import { Reports } from "./reports";
 import { PaymentsWorkspace } from "./payments";
 import { CashierDashboard } from "./cashier";
 import { AdminDashboard, type AppointmentFilters } from "./admin-dashboard";
+import { DashboardClock } from "./dashboard-clock";
 
 type Page = "dashboard" | "master" | "settings" | "reports" | "overview" | "appointments" | "payments" | "settlement" | "accounts" | "configuration" | "report-detail";
 type IconName = "grid" | "data" | "settings" | "chart" | "calendar" | "receipt" | "user" | "logout" | "scissors" | "clock" | "check";
@@ -62,11 +63,7 @@ const adminNav: { page: Page; label: string; icon: IconName }[] = [
   { page: "overview", label: "Appointments", icon: "calendar" },
 ];
 const cashierNav: typeof adminNav = [
-  { page: "dashboard", label: "Dashboard", icon: "grid" },
-  { page: "appointments", label: "Appointments", icon: "calendar" },
-  { page: "payments", label: "Appointment fees", icon: "receipt" },
-  { page: "settlement", label: "Service payments", icon: "check" },
-  { page: "reports", label: "Transactions", icon: "chart" },
+  { page: "dashboard", label: "Process payments", icon: "receipt" },
 ];
 const headings: Partial<Record<Page, [string, string]>> = {
   master: ["Salon Management", "Core configurations and salon data"],
@@ -111,7 +108,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
   function choose(card: Card) { setBookingCode(undefined); setAppointmentFilters({}); if (card.section) setSection(card.section); if (card.kind) setKind(card.kind); navigate(card.page); }
   const active = page === "configuration" ? settingsCards.some(c => c.section === section) ? "settings" : "master" : page === "accounts" ? "settings" : page === "report-detail" ? "reports" : admin && ["appointments", "payments", "settlement"].includes(page) ? "overview" : page;
   const cards = admin ? page === "master" ? masterCards : page === "settings" ? settingsCards : page === "reports" ? reportCards : page === "overview" ? overviewCards : null : null;
-  const heading = headings[page] ?? ["CLIQUE SALON AND SPA", "Where everything you need meets you at the best time."];
+  const heading = !admin ? ["Process payments", "Collect service payments and issue receipts"] : headings[page] ?? ["CLIQUE SALON AND SPA", "Where everything you need meets you at the best time."];
   return <div className={`clique-workspace ${admin ? "clique-admin" : "clique-cashier"}`}>
     <a className="clique-skip" href="#workspace-content">Skip to workspace</a>
     <button ref={menu} className="clique-menu-toggle" aria-label={open ? "Close navigation menu" : "Open navigation menu"} aria-expanded={open} aria-controls="workspace-navigation" onClick={() => setOpen(!open)}>☰</button>
@@ -127,7 +124,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
       </div>
     </aside>
     <div className="clique-content">
-      <header className={`clique-topbar${page === "dashboard" ? " is-dashboard" : ""}`}><div><h1>{heading[0]}</h1><p>{heading[1]}</p></div><span className="clique-role">{admin ? "Admin workspace" : "Cashier workspace"}</span></header>
+      <header className={`clique-topbar${page === "dashboard" ? " is-dashboard" : ""}`}><div><h1>{heading[0]}</h1><p>{heading[1]}</p></div><DashboardClock /></header>
       <main ref={content} id="workspace-content" className="clique-main" tabIndex={-1}>
         {error && <p role="alert" className="error">{error}</p>}
         {cards ? <>
@@ -137,7 +134,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
           {!cards.some(card => `${card.title} ${card.description}`.toLowerCase().includes(search.toLowerCase())) && <p role="status" className="empty-state">No options match your search.</p>}
         </> : <>
           {admin && page !== "dashboard" && <button className="clique-back" onClick={() => navigate(active as Page)}>← Back to {adminNav.find(item => item.page === active)?.label.replace("\n", " ")}</button>}
-          {page === "dashboard" && admin ? <AdminDashboard onSettlement={code => openBooking("settlement", code)} onAppointments={openAppointments} onPayments={() => openBooking("payments")} onReport={next => { setKind(next); navigate("report-detail"); }} onConfiguration={next => { setSection(next); navigate("configuration"); }} /> : page === "dashboard" || (!admin && page === "appointments") ? <CashierDashboard key={page} admin={admin} showOverview={page === "dashboard"} /> : page === "configuration" && admin ? <Configuration key={section} initialSection={section} onReviewBooking={code => openAppointments({ search: code })} /> : page === "accounts" && admin ? accounts : page === "appointments" && admin ? <AdminAppointments key={JSON.stringify(appointmentFilters)} initialFilters={appointmentFilters} onPayment={code => openBooking("payments", code)} onSettlement={code => openBooking("settlement", code)} /> : page === "payments" ? <PaymentsWorkspace key={bookingCode ?? "payments"} admin={admin} initialCode={bookingCode} /> : page === "settlement" ? <SettlementWorkspace key={bookingCode ?? "settlement"} admin={admin} initialCode={bookingCode} onBack={bookingCode ? () => setBookingCode(undefined) : undefined} /> : <Reports key={kind} admin={admin} initialKind={kind} />}
+          {page === "dashboard" && admin ? <AdminDashboard onSettlement={code => openBooking("settlement", code)} onAppointments={openAppointments} onPayments={() => openBooking("payments")} onReport={next => { setKind(next); navigate("report-detail"); }} onConfiguration={next => { setSection(next); navigate("configuration"); }} /> : !admin ? <CashierDashboard /> : page === "configuration" && admin ? <Configuration key={section} initialSection={section} onReviewBooking={code => openAppointments({ search: code })} /> : page === "accounts" && admin ? accounts : page === "appointments" && admin ? <AdminAppointments key={JSON.stringify(appointmentFilters)} initialFilters={appointmentFilters} onPayment={code => openBooking("payments", code)} onSettlement={code => openBooking("settlement", code)} /> : page === "payments" ? <PaymentsWorkspace key={bookingCode ?? "payments"} admin={admin} initialCode={bookingCode} /> : page === "settlement" ? <SettlementWorkspace key={bookingCode ?? "settlement"} admin={admin} initialCode={bookingCode} onBack={bookingCode ? () => setBookingCode(undefined) : undefined} /> : <Reports key={kind} admin={admin} initialKind={kind} />}
         </>}
       </main>
       <footer className="clique-content-footer">Clique Salon · {admin ? "Admin" : "Cashier"} workspace</footer>

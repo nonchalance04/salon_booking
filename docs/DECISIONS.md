@@ -444,3 +444,8 @@ Use Hair Services, Hair Color & Styling, Hair Treatments, Nail Services, and Spa
 ## 2026-10-13 — Personalized confirmation SMS
 
 Use the customer-requested greeting and full confirmation wording, including the customer name, full appointment date, start–end time range in the salon timezone, and booking code as the reference number. This supersedes the earlier one-segment ASCII limit: submit the complete message in one provider request and allow provider SMS segmentation. Every SMS policy checks current confirmed appointment state and verified fee payment before sending the fee-received claim. Existing suppression, duplicate prevention, OTP and retry policies remain in place.
+
+
+## 2026-10-14 — Cashier payment-only workspace
+
+At the user's request, restrict the cashier UI and backend mutation permissions to payment processing and receipts. Replace the cashier dashboard/navigation with a payment-ready visit list, booking-code payment/receipt lookup, and service collection. Move initial outcome recording, outcome corrections, customer arrival recording, and no-service closure to Admin; enforce roles in services as well as HTTP routes. Preserve current payment collection, Decimal amounts, idempotency, historical receipts, and commission calculations. Cashiers may read payment-related booking details and existing collection APIs; hiding reports does not remove read access. No database migration is required.

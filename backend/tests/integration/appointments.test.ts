@@ -542,15 +542,15 @@ test("change HTTP routes enforce guest authentication, strict requests, browser 
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
-test("check-in records one server arrival and actor across concurrent Cashier/Admin requests, protecting present customers", async () => {
+test("check-in records one server arrival and actor across concurrent Admin requests, protecting present customers", async () => {
   const f = await fixture();
   await prisma.appointment.update({ where: { id: f.booking.id }, data: { startAt: new Date() } });
-  const results = await Promise.all([changes.checkIn(cashierId, f.booking.bookingCode), changes.checkIn(adminId, f.booking.bookingCode)]);
+  const results = await Promise.all([changes.checkIn(adminId, f.booking.bookingCode), changes.checkIn(adminId, f.booking.bookingCode)]);
   assert.equal(+results[0]!.checkedInAt!, +results[1]!.checkedInAt!);
   assert.equal(results[0]!.checkedInByUserId, results[1]!.checkedInByUserId);
   const row = await prisma.appointment.findUniqueOrThrow({ where: { id: f.booking.id } });
   assert.equal(row.status, "CONFIRMED"); assert.equal(row.completedAt, null);
-  assert.ok(row.checkedInAt); assert.ok([cashierId, adminId].includes(row.checkedInByUserId!));
+  assert.ok(row.checkedInAt); assert.equal(row.checkedInByUserId, adminId);
   const service = await prisma.appointmentService.findUniqueOrThrow({ where: { id: f.booking.appointmentServices[0]!.id } });
   assert.equal(service.outcome, "SCHEDULED"); assert.equal(service.outcomeFinalizedAt, null);
   assert.equal(await prisma.payment.count({ where: { appointmentId: row.id } }), 0);
@@ -563,19 +563,19 @@ test("check-in records one server arrival and actor across concurrent Cashier/Ad
 
 test("check-in rejects another salon date, invalid status, recorded outcomes and inactive accounts", async () => {
   const f = await fixture();
-  await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode));
+  await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
   await prisma.appointment.update({ where: { id: f.booking.id }, data: { startAt: new Date() } });
   for (const status of ["PENDING_PAYMENT", "CANCELLED", "NO_SHOW", "EXPIRED", "COMPLETED"] as const) {
     await prisma.appointment.update({ where: { id: f.booking.id }, data: { status } });
-    await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode));
+    await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
   }
   await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "CONFIRMED" } });
   await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "PERFORMED" } });
-  await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode));
+  await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
   await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "SCHEDULED" } });
-  await prisma.user.update({ where: { id: cashierId }, data: { isActive: false } });
-  try { await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode)); }
-  finally { await prisma.user.update({ where: { id: cashierId }, data: { isActive: true } }); }
+  await prisma.user.update({ where: { id: adminId }, data: { isActive: false } });
+  try { await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode)); }
+  finally { await prisma.user.update({ where: { id: adminId }, data: { isActive: true } }); }
   assert.equal(await prisma.auditLog.count({ where: { entityId: f.booking.id, action: "BOOKING_CHECKED_IN" } }), 0);
 });
 
@@ -592,8 +592,12 @@ test("check-in HTTP rejects guest access, forged arrival fields and untrusted or
     const login = await post("/auth/login", { email: "cashier@example.test", password: "phase5-cashier-password" });
     assert.equal(login.status, 200); const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
     assert.equal((await post("/appointments/check-in", input, cookie, "https://attacker.test")).status, 403);
-    assert.equal((await post("/appointments/check-in", { ...input, checkedInAt: new Date().toISOString() }, cookie)).status, 400);
-    assert.equal((await post("/appointments/check-in", input, cookie)).status, 200);
+    assert.equal((await post("/appointments/check-in", input, cookie)).status, 403);
+    await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode), { code: "FORBIDDEN" });
+    const adminLogin = await post("/auth/login", { email: "admin@example.test", password: "phase5-admin-password" });
+    const adminCookie = adminLogin.headers.get("set-cookie")!.split(";")[0]!;
+    assert.equal((await post("/appointments/check-in", { ...input, checkedInAt: new Date().toISOString() }, adminCookie)).status, 400);
+    assert.equal((await post("/appointments/check-in", input, adminCookie)).status, 200);
     await prisma.user.update({ where: { id: cashierId }, data: { isActive: false } });
     try { assert.equal((await post("/appointments/check-in", input, cookie)).status, 401); }
     finally { await prisma.user.update({ where: { id: cashierId }, data: { isActive: true } }); }
@@ -653,14 +657,14 @@ test("check-in and automatic marking are mutually exclusive, including a late ar
   const dayStart = Temporal.Instant.fromEpochMilliseconds(+now).toZonedDateTimeISO("Asia/Manila").startOfDay().epochMilliseconds;
   if (+now - dayStart < 16 * 60_000) { t.skip("Arrival check-in requires the same salon date; grace has not elapsed today yet."); return; }
   await prisma.appointment.update({ where: { id: f.booking.id }, data: { startAt: new Date(+now - 16 * 60_000) } });
-  const [arrival, marking] = await Promise.allSettled([changes.checkIn(cashierId, f.booking.bookingCode), changes.markOverdueNoShows()]);
+  const [arrival, marking] = await Promise.allSettled([changes.checkIn(adminId, f.booking.bookingCode), changes.markOverdueNoShows()]);
   assert.equal(marking.status, "fulfilled");
   const row = await prisma.appointment.findUniqueOrThrow({ where: { id: f.booking.id } });
   if (arrival.status === "fulfilled") {
     assert.equal(row.status, "CONFIRMED"); assert.ok(row.checkedInAt); assert.equal(row.noShowAt, null);
   } else {
     assert.equal(row.status, "NO_SHOW"); assert.equal(row.checkedInAt, null);
-    await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode));
+    await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
   }
 });
 

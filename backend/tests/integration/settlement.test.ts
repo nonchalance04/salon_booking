@@ -81,7 +81,7 @@ import { createTokenService } from "../../src/modules/auth/auth.token.js";
 const settlement = createSettlementService(prisma);
 async function recorded(outcome: "PERFORMED" | "NOT_PERFORMED" = "PERFORMED") {
   const f = await fixture(); const row = await settlement.lookup(cashierId, f.booking.bookingCode);
-  const saved = await settlement.outcomes(cashierId, { bookingCode: row.bookingCode, revision: row.revision, services: row.services.map(s => ({ id: s.id, outcome })) });
+  const saved = await settlement.outcomes(adminId, { bookingCode: row.bookingCode, revision: row.revision, services: row.services.map(s => ({ id: s.id, outcome })) });
   return { ...f, saved };
 }
 function pay(row: { bookingCode: string; revision: string; amountDue: string }) { return { bookingCode: row.bookingCode, revision: row.revision, idempotencyKey: randomUUID(), amount: row.amountDue, currency: "PHP" as const, method: "CASH" as const, externalReference: randomUUID() }; }
@@ -108,7 +108,7 @@ test("settlement retries atomically create one payment, receipt, commissions and
 
 test("no-service closure retries create no payment receipt or commission and preserve fee", async () => {
   const f = await recorded("NOT_PERFORMED"); const original = await fee(f.booking.id);
-  await Promise.all([settlement.close(cashierId, { bookingCode: f.saved.bookingCode, revision: f.saved.revision }), settlement.close(cashierId, { bookingCode: f.saved.bookingCode, revision: f.saved.revision })].map(p => p));
+  await Promise.all([settlement.close(adminId, { bookingCode: f.saved.bookingCode, revision: f.saved.revision }), settlement.close(adminId, { bookingCode: f.saved.bookingCode, revision: f.saved.revision })].map(p => p));
   assert.equal(await prisma.payment.count({ where: { appointmentId: f.booking.id } }), 1);
   assert.deepEqual(await prisma.payment.findUnique({ where: { id: original.id } }), original);
   assert.equal(await prisma.commissionRecord.count({ where: { appointmentId: f.booking.id } }), 0);
@@ -137,17 +137,18 @@ test("service settlement generates receipt references automatically for all meth
 test("outcome recording, corrections, stale review, full amount and role boundaries", async () => {
   const f = await fixture(); const row = await settlement.lookup(cashierId, f.booking.bookingCode);
   const input = { bookingCode: row.bookingCode, revision: row.revision, services: row.services.map(s => ({ id: s.id, outcome: "PERFORMED" as const })) };
-  await assert.rejects(settlement.outcomes(adminId, input), (e: ApiError) => e.status === 403);
+  await assert.rejects(settlement.outcomes(cashierId, input), (e: ApiError) => e.status === 403);
   await assert.rejects(settlement.settle(cashierId, pay(row)), (e: ApiError) => e.code === "OUTCOMES_REQUIRED");
-  const saved = await settlement.outcomes(cashierId, input);
+  const saved = await settlement.outcomes(adminId, input);
   await assert.rejects(settlement.settle(adminId, pay(saved)), (e: ApiError) => e.status === 403);
   await assert.rejects(settlement.settle(cashierId, { ...pay(saved), amount: "100.00" }), (e: ApiError) => e.code === "AMOUNT_MISMATCH");
-  await assert.rejects(settlement.close(cashierId, { bookingCode: saved.bookingCode, revision: saved.revision }));
+  await assert.rejects(settlement.close(adminId, { bookingCode: saved.bookingCode, revision: saved.revision }));
   const change = { ...input, revision: saved.revision, services: input.services.map(s => ({ ...s, outcome: "NOT_PERFORMED" as const })) };
   await assert.rejects(settlement.outcomes(cashierId, change), (e: ApiError) => e.status === 403);
   const corrected = await settlement.outcomes(adminId, change);
   await assert.rejects(settlement.settle(cashierId, pay(saved)), (e: ApiError) => e.code === "STALE_SETTLEMENT");
-  await assert.rejects(settlement.close(adminId, { bookingCode: corrected.bookingCode, revision: corrected.revision }), (e: ApiError) => e.status === 403);
+  await assert.rejects(settlement.close(cashierId, { bookingCode: corrected.bookingCode, revision: corrected.revision }), (e: ApiError) => e.status === 403);
+  assert.equal((await settlement.close(adminId, { bookingCode: corrected.bookingCode, revision: corrected.revision })).status, "COMPLETED");
 });
 
 test("mixed outcomes exclude removed and not-performed rows; snapshots survive configuration changes", async () => {
@@ -156,9 +157,9 @@ test("mixed outcomes exclude removed and not-performed rows; snapshots survive c
   const second = await prisma.appointmentService.create({ data: { ...copy, sequenceNo: 2, priceSnapshot: "300.00" } });
   const removed = await prisma.appointmentService.create({ data: { ...copy, membershipStatus: "REMOVED", removedAt: new Date() } });
   let row = await settlement.lookup(cashierId, f.booking.bookingCode);
-  await assert.rejects(settlement.outcomes(cashierId, { bookingCode: row.bookingCode, revision: row.revision, services: [{ id: first.id, outcome: "PERFORMED" }, { id: removed.id, outcome: "PERFORMED" }] }));
-  await assert.rejects(settlement.outcomes(cashierId, { bookingCode: row.bookingCode, revision: row.revision, services: [{ id: first.id, outcome: "PERFORMED" }, { id: first.id, outcome: "PERFORMED" }] }));
-  row = await settlement.outcomes(cashierId, { bookingCode: row.bookingCode, revision: row.revision, services: [{ id: first.id, outcome: "PERFORMED" }, { id: second.id, outcome: "NOT_PERFORMED" }] });
+  await assert.rejects(settlement.outcomes(adminId, { bookingCode: row.bookingCode, revision: row.revision, services: [{ id: first.id, outcome: "PERFORMED" }, { id: removed.id, outcome: "PERFORMED" }] }));
+  await assert.rejects(settlement.outcomes(adminId, { bookingCode: row.bookingCode, revision: row.revision, services: [{ id: first.id, outcome: "PERFORMED" }, { id: first.id, outcome: "PERFORMED" }] }));
+  row = await settlement.outcomes(adminId, { bookingCode: row.bookingCode, revision: row.revision, services: [{ id: first.id, outcome: "PERFORMED" }, { id: second.id, outcome: "NOT_PERFORMED" }] });
   await prisma.service.update({ where: { id: f.item.id }, data: { price: "999.00", name: "Changed" } });
   await prisma.staffService.update({ where: { id: f.qualification.id }, data: { commissionRate: "0.9000" } });
   await settlement.settle(cashierId, pay(row));
@@ -220,6 +221,12 @@ test("HTTP authentication, CSRF, role enforcement, and deactivated accounts prot
     assert.equal((await request("pay", pay(f.saved), adminToken)).status, 403);
     assert.equal((await request("lookup", { bookingCode: f.saved.bookingCode }, cashierToken)).status, 200);
     assert.equal((await request("pay", { ...pay(f.saved), amount: 120 }, cashierToken)).status, 400);
+    const outcomeInput = { bookingCode: f.saved.bookingCode, revision: f.saved.revision, services: f.saved.services.map(s => ({ id: s.id, outcome: "PERFORMED" })) };
+    assert.equal((await request("outcomes", outcomeInput, cashierToken)).status, 403);
+    assert.equal((await request("close", { bookingCode: f.saved.bookingCode, revision: f.saved.revision }, cashierToken)).status, 403);
+    assert.equal((await request("outcomes", outcomeInput, adminToken)).status, 200);
+    const current = await settlement.lookup(cashierId, f.saved.bookingCode);
+    assert.equal((await request("pay", pay(current), cashierToken)).status, 200);
     await prisma.user.update({ where: { id: cashierId }, data: { isActive: false } });
     assert.equal((await request("lookup", { bookingCode: f.saved.bookingCode }, cashierToken)).status, 401);
     await assert.rejects(settlement.settle(cashierId, pay(f.saved)), (e: ApiError) => e.status === 401);
@@ -232,7 +239,7 @@ test("persisted multi-service totals reconcile and receipt snapshots stay immuta
   const { id, ...copy } = first;
   await prisma.appointmentService.create({ data: { ...copy, sequenceNo: 2, priceSnapshot: "1000.00" } });
   const initial = await settlement.lookup(cashierId, f.booking.bookingCode);
-  const row = await settlement.outcomes(cashierId, { bookingCode: initial.bookingCode, revision: initial.revision, services: initial.services.map(s => ({ id: s.id, outcome: "PERFORMED" })) });
+  const row = await settlement.outcomes(adminId, { bookingCode: initial.bookingCode, revision: initial.revision, services: initial.services.map(s => ({ id: s.id, outcome: "PERFORMED" })) });
   await fee(f.booking.id); await settlement.settle(cashierId, pay(row));
   const totals = await prisma.commissionRecord.aggregate({ where: { appointmentId: f.booking.id }, _sum: { serviceAmount: true, allocatedAppointmentFee: true, commissionBase: true, commissionAmount: true } });
   assert.equal(totals._sum.serviceAmount?.toFixed(2), "1500.00"); assert.equal(totals._sum.allocatedAppointmentFee?.toFixed(2), "100.00");
@@ -247,7 +254,7 @@ test("no-service outbox failure rolls back closure and leaves outcomes editable 
   const f = await recorded("NOT_PERFORMED");
   await prisma.$executeRawUnsafe(`CREATE FUNCTION reject_phase8_close() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test outbox failure'; END $$`);
   await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_phase8_close BEFORE INSERT ON "NotificationQueue" FOR EACH ROW EXECUTE FUNCTION reject_phase8_close()`);
-  try { await assert.rejects(settlement.close(cashierId, { bookingCode: f.saved.bookingCode, revision: f.saved.revision })); }
+  try { await assert.rejects(settlement.close(adminId, { bookingCode: f.saved.bookingCode, revision: f.saved.revision })); }
   finally { await prisma.$executeRawUnsafe('DROP TRIGGER reject_phase8_close ON "NotificationQueue"'); await prisma.$executeRawUnsafe('DROP FUNCTION reject_phase8_close()'); }
   assert.equal((await prisma.appointment.findUniqueOrThrow({ where: { id: f.booking.id } })).completionType, null);
   assert.equal((await prisma.appointmentService.findFirstOrThrow({ where: { appointmentId: f.booking.id } })).outcomeFinalizedAt, null);

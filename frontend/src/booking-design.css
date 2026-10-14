@@ -118,3 +118,9 @@
   .customer-site .service-family-options{padding:0 12px 12px}
   .customer-site .service-options-content{padding:22px 18px}
 }
+
+.customer-site .service-family-controls{display:flex;align-items:center}
+.customer-site .service-family-controls .service-family-heading{flex:1;min-width:0}
+.customer-site .service-family-remove{display:grid;place-items:center;flex-shrink:0;width:44px;height:44px;margin-right:18px;padding:0;border:1px solid #bca452;border-radius:50%;background:#fffdf5;color:#292a28;font-size:24px}
+.customer-site .service-family-remove:hover{background:#f1e8c9}
+.customer-site .service-family-remove:focus-visible{outline:2px solid #85702f;outline-offset:3px}

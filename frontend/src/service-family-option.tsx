@@ -3,8 +3,8 @@ import { money, type CatalogService } from "./public-site";
 import type { ServiceFamily } from "./service-variants";
 import { serviceMenuCategory } from "./service-categories";
 
-export function ServiceFamilyOption({ family, selectedIds, onSelect }: {
-  family: ServiceFamily<CatalogService>; selectedIds: string[]; onSelect: (service: CatalogService) => void;
+export function ServiceFamilyOption({ family, selectedIds, onSelect, onRemove }: {
+  family: ServiceFamily<CatalogService>; selectedIds: string[]; onSelect: (service: CatalogService) => void; onRemove: (service: CatalogService) => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -15,19 +15,19 @@ export function ServiceFamilyOption({ family, selectedIds, onSelect }: {
   function option(service: CatalogService, label: string) {
     const isSelected = selectedIds.includes(service.id);
     return <button type="button" className={`service-option ${isSelected ? "selected" : ""}`} key={service.id}
-      aria-label={`Select ${service.name} (${service.category})`} aria-pressed={isSelected} onClick={() => { onSelect(service); setOpen(false); }}>
+      aria-label={`${isSelected ? "Remove" : "Select"} ${service.name} (${service.category})`} aria-pressed={isSelected} onClick={() => { if (isSelected) onRemove(service); else onSelect(service); setOpen(false); }}>
       <div><h3>{label}</h3><p className="service-duration">◷ {service.durationMinutes} min{isSelected && <span className="service-added">Selected</span>}</p>
         {service.description && service.description.trim().toLowerCase() !== serviceMenuCategory(service).toLowerCase() && <p className="muted">{service.description}</p>}
-        <strong>{money(service.price)}</strong></div><span className="select-circle" aria-hidden="true">{isSelected ? "✓" : "＋"}</span>
+        <strong>{money(service.price)}</strong></div><span className="select-circle" aria-hidden="true">{isSelected ? "-" : "＋"}</span>
     </button>;
   }
   if (!multiple) return option(family.options[0].service, family.options[0].service.name);
   return <section className={`service-family ${selected ? "selected" : ""}`} aria-label={family.name}>
-    <button ref={triggerRef} type="button" className="service-family-heading" aria-haspopup="dialog" aria-controls={open ? optionsId : undefined}
+    <div className="service-family-controls"><button ref={triggerRef} type="button" className="service-family-heading" aria-haspopup="dialog" aria-controls={open ? optionsId : undefined}
       onClick={() => setOpen(true)}>
       <span><strong>{family.name}</strong><span className="service-family-caption">{selected ? selected.label : `${family.options.length} options · From ${money(minimumPrice)}`}</span></span>
       <span className="service-family-action">{selected ? "Change" : "Choose"}<span aria-hidden="true"> →</span></span>
-    </button>
+    </button>{selected && <button type="button" className="service-family-remove" aria-label={`Remove ${selected.service.name} (${selected.service.category})`} onClick={() => onRemove(selected.service)}>-</button>}</div>
     {open && <ServiceOptionsDialog id={optionsId} name={family.name} triggerRef={triggerRef} onClose={() => setOpen(false)}>
       {family.options.map(({ service, label }) => option(service, label))}
     </ServiceOptionsDialog>}

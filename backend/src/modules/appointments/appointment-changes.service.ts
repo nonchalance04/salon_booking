@@ -818,8 +818,8 @@ export function createAppointmentChangesService(
         await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${actorId}::uuid FOR SHARE`;
         const actor = await tx.user.findUnique({ where: { id: actorId } });
         if (!actor?.isActive) throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
-        if (actor.role !== "ADMIN" && actor.role !== "CASHIER")
-          throw new ApiError(403, "FORBIDDEN", "Cashier or administrator access is required.");
+        if (actor.role !== "ADMIN")
+          throw new ApiError(403, "FORBIDDEN", "Administrator access is required to record arrival.");
         const { row } = await lockAppointment(tx, bookingCode);
         if (row.status !== "CONFIRMED" || row.completedAt)
           throw conflict("Only a confirmed, uncompleted appointment can be checked in.");

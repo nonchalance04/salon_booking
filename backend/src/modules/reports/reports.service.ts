@@ -97,6 +97,10 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
       return read(actorId, false, async tx => {
         const where: Prisma.AppointmentWhereInput = {
           status: "CONFIRMED", completedAt: null, completionType: null,
+          ...(q.paymentReady === "true" ? { appointmentServices: {
+            some: { membershipStatus: "ACTIVE" as const, outcome: "PERFORMED" as const, actualChargedAmount: { gt: 0 } },
+            none: { membershipStatus: "ACTIVE" as const, outcome: "SCHEDULED" as const },
+          } } : {}),
           ...(q.search ? { OR: [
             { bookingCode: { contains: q.search, mode: "insensitive" } },
             { AND: q.search.split(/\s+/).map(word => ({ OR: [
