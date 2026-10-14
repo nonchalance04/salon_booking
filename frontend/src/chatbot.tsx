@@ -11,7 +11,7 @@ const topics = [
   { icon: "◷", title: "Plan my visit", detail: "Opening hours and booking help", question: "Opening hours" },
 ];
 
-export function Chatbot({ embedded = false }: { embedded?: boolean } = {}) {
+export function Chatbot({ embedded = false, compact = false, active = true }: { embedded?: boolean; compact?: boolean; active?: boolean } = {}) {
   const [savedSession] = useState(readChatSession);
   const [history, setHistory] = useState(savedSession.history);
   const [message, setMessage] = useState(savedSession.draft);
@@ -28,17 +28,17 @@ export function Chatbot({ embedded = false }: { embedded?: boolean } = {}) {
 
   useEffect(() => {
     const region = transcript.current;
-    if (region) region.scrollTo({ top: region.scrollHeight, behavior: "instant" });
-  }, [history, pending, error]);
+    if (active && region) region.scrollTo({ top: region.scrollHeight, behavior: "instant" });
+  }, [active, history, pending, error]);
   useEffect(() => {
-    if (!busy && (history.length > 0 || error)) input.current?.focus({ preventScroll: true });
-  }, [busy, history.length, error]);
+    if (active && !busy && (history.length > 0 || error)) input.current?.focus({ preventScroll: true });
+  }, [active, busy, history.length, error]);
   useEffect(() => {
     if (input.current) {
       input.current.style.height = "auto";
       input.current.style.height = `${Math.min(input.current.scrollHeight, 120)}px`;
     }
-  }, [message]);
+  }, [message, active]);
 
   async function ask(question: string) {
     const trimmed = question.trim();
@@ -57,16 +57,16 @@ export function Chatbot({ embedded = false }: { embedded?: boolean } = {}) {
   function reset() {
     setHistory([]); setPending(""); setMessage(""); setError(""); input.current?.focus();
   }
-  return <section className={`salon-guide chat-page${embedded ? " container" : " workspace-main"}`} aria-labelledby="chat-title">
-    {!embedded && <a className="wordmark" href="/">CLIQUE<span>SALON</span></a>}
-    <div className="chat-page-heading"><div><p className="eyebrow">A LITTLE GUIDANCE, JUST FOR YOU</p><h1 id="chat-title">Your next good hair day<br />starts here.</h1><p>Explore services, plan your visit, or find a little beauty inspiration.</p></div><a className="chat-book-link" href="/availability">Book a visit <span aria-hidden="true">↗</span></a></div>
+  return <section className={`salon-guide chat-page${compact ? " chat-page--compact" : embedded ? " container" : " workspace-main"}`} aria-label={compact ? "Salon recommendations" : undefined} aria-labelledby={compact ? undefined : "chat-title"}>
+    {!embedded && !compact && <a className="wordmark" href="/">CLIQUE<span>SALON</span></a>}
+    {!compact && <div className="chat-page-heading"><div><p className="eyebrow">A LITTLE GUIDANCE, JUST FOR YOU</p><h1 id="chat-title">Your next good hair day<br />starts here.</h1><p>Explore services, plan your visit, or find a little beauty inspiration.</p></div><a className="chat-book-link" href="/availability">Book a visit <span aria-hidden="true">↗</span></a></div>}
     <div className="chat-layout">
-      <aside className="chat-sidebar" aria-label="Salon guide shortcuts">
+      {!compact && <aside className="chat-sidebar" aria-label="Salon guide shortcuts">
         <div className="chat-sidebar-intro"><span className="chat-emblem" aria-hidden="true">✧</span><h2>Let’s find your<br />kind of care.</h2><p>From a fresh look to a moment of calm. We’ll help you get started.</p></div>
         <p className="chat-label">EXPLORE WITH US</p>
         <div className="chat-topics">{topics.map(topic => <button key={topic.title} disabled={busy} onClick={() => void ask(topic.question)}><span className="chat-topic-icon" aria-hidden="true">{topic.icon}</span><span><strong>{topic.title}</strong><small>{topic.detail}</small></span><span aria-hidden="true">↗</span></button>)}</div>
         <div className="chat-visit"><p className="chat-label">ALREADY HAVE AN APPOINTMENT?</p><a href="/appointment">Manage your booking <span aria-hidden="true">↗</span></a><p>View, reschedule, or cancel your visit.</p></div>
-      </aside>
+      </aside>}
       <div className="chat-panel">
         <div className="chat-panel-heading"><div className="chat-assistant-identity"><span className="chat-avatar" aria-hidden="true">✧</span><div><strong>Clique salon guide</strong><small>AI-assisted service guidance</small></div></div><button className="chat-reset" onClick={reset} disabled={busy || (!history.length && !pending)} aria-label="Start a new conversation"><span aria-hidden="true">＋</span> New chat</button></div>
         <div className="chat-transcript" ref={transcript} role="log" aria-label="Conversation" aria-live="polite" tabIndex={0}>
