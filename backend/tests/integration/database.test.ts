@@ -84,7 +84,12 @@ test("migrations apply and development seeding is repeatable with hashed passwor
   assert.equal(policy.appointmentFeeAmount.toFixed(2), "100.00");
   assert.equal(policy.effectiveFrom.toISOString(), "2026-09-30T16:00:00.000Z");
   const migrations = await pool.query('SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL');
-  assert.equal(migrations.rowCount, 7);
+  assert.equal(migrations.rowCount, 8);
+  const categoryCounts = await prisma.service.groupBy({ by: ["category"], _count: true });
+  assert.deepEqual(Object.fromEntries(categoryCounts.map(row => [row.category, row._count])), {
+    "Hair Services": 9, "Hair Color & Styling": 9, "Hair Treatments": 4,
+    "Nail Services": 6, "Spa & Relaxation": 2,
+  });
 });
 
 test("seed configures Mildred for explicit nail services and reconciles stale qualifications on rerun", async () => {
@@ -92,7 +97,7 @@ test("seed configures Mildred for explicit nail services and reconciles stale qu
   const active = () => prisma.staffService.findMany({ where: { staffId: mildred.id, isActive: true }, include: { service: true } });
   const expected = ["Manicure", "Pedicure", "Manicure & Pedicure", "Gel Polish", "Nail Art"].sort();
   assert.deepEqual((await active()).map(row => row.service.name).sort(), expected);
-  const hair = await prisma.service.findFirstOrThrow({ where: { category: "Hair" } });
+  const hair = await prisma.service.findFirstOrThrow({ where: { category: "Hair Services" } });
   const stale = await prisma.staffService.create({ data: { staffId: mildred.id, serviceId: hair.id, commissionRate: "0.4" } });
   const manicure = (await active()).find(row => row.service.name === "Manicure")!;
   await prisma.staffService.update({ where: { id: manicure.id }, data: { isActive: false, commissionRate: "0.5" } });

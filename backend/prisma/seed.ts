@@ -537,7 +537,7 @@ async function main() {
         update: {
           name: service.name,
           description: service.description,
-          category: service.description.startsWith("Hair") ? "Hair" : service.description === "Nail Services" ? "Nails" : "Spa & Relaxation",
+          category: service.description,
           price: service.price,
           durationMinutes: service.durationMinutes,
           bufferMinutes: null,
@@ -547,7 +547,7 @@ async function main() {
           id,
           name: service.name,
           description: service.description,
-          category: service.description.startsWith("Hair") ? "Hair" : service.description === "Nail Services" ? "Nails" : "Spa & Relaxation",
+          category: service.description,
           price: service.price,
           durationMinutes: service.durationMinutes,
           bufferMinutes: null,

@@ -1,5 +1,5 @@
-// Customer-facing groups from the salon price list. Booking skill categories
-// remain separate so browsing does not change service selection rules.
+// Approved menu groups are also the booking categories. Legacy aliases keep
+// older catalogs readable while the category migration is being deployed.
 export const menuCategories = [
   "Hair Services", "Hair Color & Styling", "Hair Treatments",
   "Nail Services", "Spa & Relaxation",

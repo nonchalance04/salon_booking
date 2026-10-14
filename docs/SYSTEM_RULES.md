@@ -30,7 +30,7 @@ A customer may:
 
 - Browse active salon services.
 - View service prices and durations.
-- Select one or more services. Customer booking and availability APIs enforce one service per category and no duplicate services, including rescheduling and no-show recovery requests. Categories are compared after trimming whitespace and ignoring case. The booking UI replaces the previous choice when another service in the same category is selected.
+- Select one or more services. Customer booking and availability APIs enforce one service per category and no duplicate services, including rescheduling and no-show recovery requests. The approved booking categories are Hair Services, Hair Color & Styling, Hair Treatments, Nail Services, and Spa & Relaxation. Customers may combine one service from each, including a haircut, color, and treatment in one appointment. Variants within a category remain mutually exclusive. Categories are compared after trimming whitespace and ignoring case. The booking UI replaces the previous choice when another service in the same category is selected.
 - Choose a specific qualified staff member for each service.
 - Choose Any Available Staff for each service.
 - Select an available appointment date and starting time.
@@ -145,7 +145,7 @@ A staff member may perform only services for which they are qualified.
 
 Staff-service qualifications are explicitly configured by the Admin.
 
-Admins can manage a staff member's qualifications together using service checkboxes grouped by the Service category (for example Hair or Nails). Categories organize the list and do not grant eligibility: each service must be individually selected. Staff may qualify for services in multiple categories; staff with no active qualifications cannot receive new assignments.
+Admins can manage a staff member's qualifications together using service checkboxes grouped by the Service category (for example Hair Services or Nail Services). Categories organize the list and do not grant eligibility: each service must be individually selected. Staff may qualify for services in multiple categories; staff with no active qualifications cannot receive new assignments.
 
 Saving skills updates qualifications in one audited transaction, retaining deactivated records and reusing them when re-enabled. Removing a qualification needed by an existing blocking reservation is rejected together with all other changes in that save. Existing appointment commission snapshots remain unchanged.
 

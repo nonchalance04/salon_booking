@@ -284,7 +284,7 @@ Inactive Staff:
 
 Represents salon service definitions.
 
-`category` is a required String, defaults to `Other`, and is limited to 100 trimmed characters by the configuration API. It groups services in staff skill management without granting qualifications. The initial migration classifies existing approved menu descriptions into Hair, Nails, and Spa & Relaxation; other services remain Other until an Admin classifies them.
+`category` is a required String, defaults to `Other`, and is limited to 100 trimmed characters by the configuration API. It groups services in staff skill management without granting qualifications. The menu booking categories migration splits legacy Hair and Nails classifications using approved descriptions into Hair Services, Hair Color & Styling, Hair Treatments, and Nail Services; Spa & Relaxation remains separate. These categories also enforce one service per category in bookings. Custom classifications are preserved; unknown services remain available for Admin classification.
 
 ## Fields
 
