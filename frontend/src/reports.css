@@ -1,0 +1,53 @@
+.reports { min-width: 0; }
+.reports > .account-form .form-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 18px; }
+.reports > .account-form label { margin-bottom: 0; }
+.reports > .account-form > button { margin-top: 18px; }
+.reports .report-table-wrap { position: relative; width: 100%; max-width: 100%; margin: 16px 0 24px; overflow-x: auto; overscroll-behavior-x: contain; }
+.reports .report-table-wrap:focus-visible { outline: 3px solid #987b1f; outline-offset: 3px; }
+.reports .report-table { width: max(100%, var(--report-table-width)); table-layout: fixed; white-space: normal; }
+.reports .report-table th, .reports .report-table td { padding: 16px; vertical-align: top; overflow-wrap: anywhere; border-right: 1px solid #d6d6cf; border-bottom: 1px solid #d6d6cf; }
+.reports .report-table th:last-child, .reports .report-table td:last-child { border-right: 0; }
+.reports .report-table th { font-size: 11px; line-height: 1.5; letter-spacing: .04em; border-bottom: 2px solid #bca45b; }
+.reports .report-table td { font-size: 13px; line-height: 1.6; }
+.reports .report-table tbody tr:nth-child(even) { background: #fafaf8; }
+.reports .report-table tbody tr:hover { background: #f8f5e9; }
+.reports .report-table .report-numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.reports .report-table th, .reports .report-table th.report-numeric { text-align: center; }
+.reports .report-table td, .reports .report-table td.report-numeric { text-align: center; }
+.reports .report-cell-value { min-width: 0; max-width: 100%; }
+.reports .report-cell-value > button { max-width: 100%; padding: 8px 12px; font-size: 12px; white-space: normal; }
+.reports .report-cell-details { text-align: center; }
+.reports .report-cell-details > summary { width: fit-content; margin-inline: auto; cursor: pointer; font-weight: 600; color: #65500e; border-radius: 4px; }
+.reports .report-cell-details > summary:focus-visible { outline: 3px solid #987b1f; outline-offset: 3px; }
+.reports .report-details { min-width: 0; max-width: 100%; margin: 12px 0 0; }
+.reports .report-details > div { display: block; padding: 8px 0; margin: 0; border-bottom: 1px solid #e7e7df; }
+.reports .report-details > div:last-child { border-bottom: 0; }
+.reports .report-details dt { font-size: 11px; color: #686868; }
+.reports .report-details dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.reports .report-cell-value ul { list-style: none; margin: 12px 0 0; padding: 0; }
+.reports .report-cell-value li { padding: 12px; margin-bottom: 10px; background: #f5f5f1; border: 1px solid #e3e3dc; border-radius: 8px; }
+.reports .report-cell-value li > .report-details { margin-top: 0; }
+.reports .report-pagination { align-items: center; justify-content: flex-end; gap: 16px; margin: 20px 0; }
+.reports .report-pagination span { font-size: 13px; color: #686868; }
+.reports .report-empty { padding: 24px; border: 1px dashed #d6d6cf; border-radius: 10px; color: #686868; background: #fff; }
+
+@media (max-width: 640px) {
+  .reports > .account-form { padding: 18px; }
+  .reports .report-table-wrap { border: 0; border-radius: 0; background: transparent; overflow: visible; }
+  .reports .report-table { display: block; width: 100%; }
+  .reports .report-table colgroup { display: none; }
+  .reports .report-table thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .reports .report-table tbody { display: block; }
+  .reports .report-table tbody tr { display: block; margin-bottom: 16px; border: 1px solid #deded6; border-radius: 10px; background: #fff; overflow: hidden; }
+  .reports .report-table td, .reports .report-table td.report-numeric { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); gap: 12px; padding: 12px 16px; text-align: center; border-right: 0; }
+  .reports .report-table td::before { content: attr(data-label); font-size: 11px; font-weight: 600; color: #686868; }
+  .reports .report-table td.report-detail-cell { grid-template-columns: minmax(0, 1fr); }
+  .reports .report-table tr:last-child td { border-bottom: 1px solid #d6d6cf; }
+  .reports .report-table tr td:last-child { border-bottom: 0; }
+  .reports .report-pagination { justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .reports .report-pagination button { padding: 9px 12px; }
+}
+
+@media (max-width: 380px) {
+  .reports .report-table td, .reports .report-table td.report-numeric { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}

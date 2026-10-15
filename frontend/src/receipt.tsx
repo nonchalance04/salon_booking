@@ -29,14 +29,20 @@ export function ReceiptContent({ receipt }: { receipt: Receipt }) {
   </>;
 }
 
-export function ReceiptView({ receipt }: { receipt: Receipt }) {
+export function ReceiptPrintButton({ receipt, label = "Print receipt", className }: { receipt: Receipt; label?: string; className?: string }) {
   const [printing, setPrinting] = useState(false);
   useEffect(() => {
     if (!printing) return;
+    const originalTitle = document.title;
+    document.title = receipt.receiptNumber;
     const done = () => setPrinting(false);
     window.addEventListener("afterprint", done, { once: true });
     window.print();
-    return () => window.removeEventListener("afterprint", done);
-  }, [printing]);
-  return <><article className="salon-receipt" aria-label={`Receipt ${receipt.receiptNumber}`}><ReceiptContent receipt={receipt} /><div className="receipt-actions"><button type="button" className="receipt-print" onClick={() => setPrinting(true)}>Print receipt</button></div></article>{printing && createPortal(<div className="receipt-print-root"><article className="salon-receipt"><ReceiptContent receipt={receipt} /></article></div>, document.body)}</>;
+    return () => { document.title = originalTitle; window.removeEventListener("afterprint", done); };
+  }, [printing, receipt]);
+  return <><button type="button" className={className} onClick={() => setPrinting(true)} aria-label={`${label} ${receipt.receiptNumber}`}>{label}</button>{printing && createPortal(<div className="receipt-print-root"><article className="salon-receipt"><ReceiptContent receipt={receipt} /></article></div>, document.body)}</>;
+}
+
+export function ReceiptView({ receipt }: { receipt: Receipt }) {
+  return <article className="salon-receipt" aria-label={`Receipt ${receipt.receiptNumber}`}><ReceiptContent receipt={receipt} /><div className="receipt-actions"><ReceiptPrintButton receipt={receipt} className="receipt-print" /></div></article>;
 }
