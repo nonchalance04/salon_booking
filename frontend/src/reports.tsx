@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, t
 import { api } from "./api";
 import { ReceiptPrintButton } from "./receipt";
 import "./reports.css";
-type Collections = { timeZone: string; basis: string; totals: { currency: string; captured: string; refunded: string; netCashMovement: string; successfulApplied: string; successfulUnapplied: string; reconciliationRequired: string }[]; methodTotals: Record<string, unknown>[]; typeTotals: Record<string, unknown>[]; breakdown: Record<string, unknown>[] };
+import { paymentStatusLabel, visibleReportEntries } from "./payment-presentation";
+type Collections = { timeZone: string; basis: string; totals: { currency: string; captured: string; netCashMovement: string; successfulApplied: string; successfulUnapplied: string; reconciliationRequired: string }[]; methodTotals: Record<string, unknown>[]; typeTotals: Record<string, unknown>[]; breakdown: Record<string, unknown>[] };
 type Report = { rows: Record<string, unknown>[]; total: number; page: number; pageSize: number; dateBasis: string; timeZone: string };
 const reportLabels: Record<string, string> = {
   serviceNameSnapshot: "Service Name",
@@ -14,11 +15,11 @@ const label = (key: string) => reportLabels[key] ?? key.replace(/([a-z])([A-Z])/
 function Value({ value }: { value: unknown }) {
   if (value == null) return <>—</>;
   if (Array.isArray(value)) return <ul>{value.map((item, i) => <li key={i}><Value value={item} /></li>)}</ul>;
-  if (typeof value === "object") return <dl className="report-details">{Object.entries(value).map(([key, item]) => <div key={key}><dt>{label(key)}</dt><dd><Value value={item} /></dd></div>)}</dl>;
+  if (typeof value === "object") return <dl className="report-details">{visibleReportEntries(value as Record<string, unknown>).map(([key, item]) => <div key={key}><dt>{label(key)}</dt><dd><Value value={item} /></dd></div>)}</dl>;
   if (typeof value === "boolean") return <>{value ? "Yes" : "No"}</>;
-  return <>{String(value)}</>;
+  return <>{paymentStatusLabel(String(value))}</>;
 }
-const numericColumn = (key: string) => /(?:amount|price|captured|refunded|netCashMovement|successfulApplied|successfulUnapplied|reconciliationRequired|commissionBase|allocatedAppointmentFee|total|count|rate)$/i.test(key);
+const numericColumn = (key: string) => /(?:amount|price|captured|netCashMovement|successfulApplied|successfulUnapplied|reconciliationRequired|commissionBase|allocatedAppointmentFee|total|count|rate)$/i.test(key);
 function columnWidth(key: string, rows: Record<string, unknown>[]) {
   if (rows.some(row => row[key] !== null && typeof row[key] === "object")) return 280;
   if (/Id$|Number$/.test(key)) return 220;
@@ -31,7 +32,7 @@ function columnWidth(key: string, rows: Record<string, unknown>[]) {
 }
 function DataTable({ rows, renderCell, title = "Report records" }: { rows: Record<string, unknown>[]; renderCell?: (column: string, row: Record<string, unknown>) => ReactNode; title?: string }) {
   if (!rows.length) return <p className="report-empty">No records in this period.</p>;
-  const columns = Object.keys(rows[0]).filter(k => k !== "id");
+  const columns = visibleReportEntries(rows[0]).map(([key]) => key).filter(k => k !== "id");
   const widths = columns.map(column => columnWidth(column, rows));
   const style = { "--report-table-width": `${widths.reduce((sum, width) => sum + width, 0)}px` } as CSSProperties;
   return <div className="table-wrap report-table-wrap" role="region" aria-label={`${title} table`} tabIndex={0}>
@@ -71,7 +72,7 @@ export function Reports({ admin, initialKind = "appointments" }: { admin: boolea
           const timeFormat = new Intl.DateTimeFormat("en-PH", { timeZone: result.timeZone, hour: "numeric", minute: "2-digit", hour12: true });
           result.rows = result.rows.map(({ appointment, ...payment }) => ({
             bookingCode: appointment && typeof appointment === "object" && "bookingCode" in appointment ? appointment.bookingCode : null,
-            ...Object.fromEntries(Object.entries(payment).filter(([key]) => !["currency", "satisfiesObligation", "refundedAt", "reconciliationStatus"].includes(key)).map(([key, value]) => {
+            ...Object.fromEntries(visibleReportEntries(payment).filter(([key]) => !["currency", "satisfiesObligation", "reconciliationStatus"].includes(key)).map(([key, value]) => {
               if (key === "createdAt" || key === "paidAt") {
                 return [key === "createdAt" ? "createdTime" : "paidTime", value == null ? null : timeFormat.format(new Date(String(value)))];
               }

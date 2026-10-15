@@ -203,7 +203,7 @@ const settingsCards: Card[] = [
 const reportCards: Card[] = [
   {
     title: "Sales Summary",
-    description: "Review collections, payments, and refunds",
+    description: "Review collections and payments",
     icon: "chart",
     page: "report-detail",
     kind: "payments",
@@ -265,7 +265,7 @@ const adminNav: { page: Page; label: string; icon: IconName }[] = [
   { page: "overview", label: "Appointments", icon: "calendar" },
 ];
 const cashierNav: typeof adminNav = [
-  { page: "dashboard", label: "Process payments", icon: "receipt" },
+  { page: "dashboard", label: "Check-in & payments", icon: "receipt" },
 ];
 const headings: Partial<Record<Page, [string, string]>> = {
   master: ["Salon Management", "Core configurations and salon data"],
@@ -368,7 +368,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
             : null
     : null;
   const heading = !admin
-    ? ["Process payments", "Collect service payments and issue receipts"]
+    ? ["Check-in & payments", "Record customer arrival, collect service payments and issue receipts"]
     : (headings[page] ?? [
         "CLIQUE SALON AND SPA",
         "Where everything you need meets you at the best time.",

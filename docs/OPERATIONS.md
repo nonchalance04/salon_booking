@@ -33,8 +33,8 @@ to booking; the availability screen remains authoritative for available times.
 - Use receipt controls for each stored receipt. Confirm the correct receipt and
   printer/page size in the print dialog. Report a printing/layout issue before
   issuing an incorrect receipt.
-- **Collections:** select inclusive salon-local dates. Captures minus refunds is
-  net cash movement, not profit. Review applied/unapplied and reconciliation values.
+- **Collections:** select inclusive salon-local dates. Net cash movement reflects
+  recorded payment adjustments and is not profit. Review applied/unapplied and reconciliation values.
 - A stale-review error requires Refresh appointment and a new review. Ask an Admin
   to correct saved outcomes before finalization. Finalized outcomes cannot be edited.
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { coversReservation, overlaps } from "../src/modules/scheduling/coverage.js";
-import { staffSkillsSchema, serviceSchema, qualificationSchema, hoursSchema, scheduleSchema, policySchema, closureSchema } from "../src/modules/configuration/configuration.schema.js";
+import { staffSkillsSchema, staffSchema, staffUpdateSchema, serviceSchema, qualificationSchema, hoursSchema, scheduleSchema, policySchema, closureSchema } from "../src/modules/configuration/configuration.schema.js";
 
 const time = (value: string) => new Date(`1970-01-01T${value}:00Z`);
 test("weekly coverage uses salon-local weekdays, full buffers, and contiguous window unions", () => {
@@ -56,4 +56,19 @@ test("staff skill inputs reject duplicate services and invalid commission rates"
   const input = { name: "Manicure", description: null, price: "120.00", durationMinutes: 30, bufferMinutes: null, isActive: true };
   assert.equal(serviceSchema.parse({ ...input, category: " Nails " }).category, "Nails");
   assert.equal(serviceSchema.safeParse({ ...input, category: " " }).success, false);
+});
+
+
+test("staff edits allow a blank last name while new staff still require one", () => {
+  const input = { firstName: "Jamie", phone: null, isActive: true };
+  for (const lastName of ["", "   "]) {
+    assert.equal(staffUpdateSchema.parse({ ...input, lastName }).lastName, "");
+    assert.equal(staffSchema.safeParse({ ...input, lastName }).success, false);
+  }
+  assert.equal(staffUpdateSchema.parse(input).lastName, "");
+  assert.equal(staffUpdateSchema.parse({ ...input, lastName: " Santos " }).lastName, "Santos");
+  assert.equal(staffSchema.safeParse(input).success, false);
+  for (const lastName of [null, 123, "x".repeat(201)]) {
+    assert.equal(staffUpdateSchema.safeParse({ ...input, lastName }).success, false);
+  }
 });

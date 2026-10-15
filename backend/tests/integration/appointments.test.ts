@@ -542,15 +542,18 @@ test("change HTTP routes enforce guest authentication, strict requests, browser 
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
-test("check-in records one server arrival and actor across concurrent Admin requests, protecting present customers", async () => {
+test("check-in records one server arrival and actor across concurrent Admin/Cashier requests, protecting present customers", async () => {
   const f = await fixture();
   await prisma.appointment.update({ where: { id: f.booking.id }, data: { startAt: new Date() } });
-  const results = await Promise.all([changes.checkIn(adminId, f.booking.bookingCode), changes.checkIn(adminId, f.booking.bookingCode)]);
+  const results = await Promise.all([changes.checkIn(cashierId, f.booking.bookingCode), changes.checkIn(adminId, f.booking.bookingCode)]);
   assert.equal(+results[0]!.checkedInAt!, +results[1]!.checkedInAt!);
   assert.equal(results[0]!.checkedInByUserId, results[1]!.checkedInByUserId);
   const row = await prisma.appointment.findUniqueOrThrow({ where: { id: f.booking.id } });
   assert.equal(row.status, "CONFIRMED"); assert.equal(row.completedAt, null);
-  assert.ok(row.checkedInAt); assert.equal(row.checkedInByUserId, adminId);
+  assert.ok(row.checkedInAt); assert.ok([adminId, cashierId].includes(row.checkedInByUserId!));
+  const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: row.id, action: "BOOKING_CHECKED_IN" } });
+  assert.equal(audit.actorUserId, row.checkedInByUserId);
+  assert.equal(audit.actorType, row.checkedInByUserId === cashierId ? "CASHIER" : "ADMIN");
   const service = await prisma.appointmentService.findUniqueOrThrow({ where: { id: f.booking.appointmentServices[0]!.id } });
   assert.equal(service.outcome, "SCHEDULED"); assert.equal(service.outcomeFinalizedAt, null);
   assert.equal(await prisma.payment.count({ where: { appointmentId: row.id } }), 0);
@@ -562,21 +565,23 @@ test("check-in records one server arrival and actor across concurrent Admin requ
 });
 
 test("check-in rejects another salon date, invalid status, recorded outcomes and inactive accounts", async () => {
-  const f = await fixture();
-  await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
-  await prisma.appointment.update({ where: { id: f.booking.id }, data: { startAt: new Date() } });
-  for (const status of ["PENDING_PAYMENT", "CANCELLED", "NO_SHOW", "EXPIRED", "COMPLETED"] as const) {
-    await prisma.appointment.update({ where: { id: f.booking.id }, data: { status } });
-    await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
+  for (const checkInActorId of [adminId, cashierId]) {
+    const f = await fixture();
+    await assert.rejects(changes.checkIn(checkInActorId, f.booking.bookingCode));
+    await prisma.appointment.update({ where: { id: f.booking.id }, data: { startAt: new Date() } });
+    for (const status of ["PENDING_PAYMENT", "CANCELLED", "NO_SHOW", "EXPIRED", "COMPLETED"] as const) {
+      await prisma.appointment.update({ where: { id: f.booking.id }, data: { status } });
+      await assert.rejects(changes.checkIn(checkInActorId, f.booking.bookingCode));
+    }
+    await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "CONFIRMED" } });
+    await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "PERFORMED" } });
+    await assert.rejects(changes.checkIn(checkInActorId, f.booking.bookingCode));
+    await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "SCHEDULED" } });
+    await prisma.user.update({ where: { id: checkInActorId }, data: { isActive: false } });
+    try { await assert.rejects(changes.checkIn(checkInActorId, f.booking.bookingCode)); }
+    finally { await prisma.user.update({ where: { id: checkInActorId }, data: { isActive: true } }); }
+    assert.equal(await prisma.auditLog.count({ where: { entityId: f.booking.id, action: "BOOKING_CHECKED_IN" } }), 0);
   }
-  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "CONFIRMED" } });
-  await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "PERFORMED" } });
-  await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode));
-  await prisma.appointmentService.update({ where: { id: f.booking.appointmentServices[0]!.id }, data: { outcome: "SCHEDULED" } });
-  await prisma.user.update({ where: { id: adminId }, data: { isActive: false } });
-  try { await assert.rejects(changes.checkIn(adminId, f.booking.bookingCode)); }
-  finally { await prisma.user.update({ where: { id: adminId }, data: { isActive: true } }); }
-  assert.equal(await prisma.auditLog.count({ where: { entityId: f.booking.id, action: "BOOKING_CHECKED_IN" } }), 0);
 });
 
 test("check-in HTTP rejects guest access, forged arrival fields and untrusted origins", async () => {
@@ -592,8 +597,12 @@ test("check-in HTTP rejects guest access, forged arrival fields and untrusted or
     const login = await post("/auth/login", { email: "cashier@example.test", password: "phase5-cashier-password" });
     assert.equal(login.status, 200); const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
     assert.equal((await post("/appointments/check-in", input, cookie, "https://attacker.test")).status, 403);
-    assert.equal((await post("/appointments/check-in", input, cookie)).status, 403);
-    await assert.rejects(changes.checkIn(cashierId, f.booking.bookingCode), { code: "FORBIDDEN" });
+    for (const forged of [{ checkedInAt: new Date().toISOString() }, { checkedInByUserId: adminId }]) {
+      assert.equal((await post("/appointments/check-in", { ...input, ...forged }, cookie)).status, 400);
+    }
+    const arrival = await post("/appointments/check-in", input, cookie);
+    assert.equal(arrival.status, 200);
+    assert.equal((await arrival.json()).checkedInByUserId, cashierId);
     const adminLogin = await post("/auth/login", { email: "admin@example.test", password: "phase5-admin-password" });
     const adminCookie = adminLogin.headers.get("set-cookie")!.split(";")[0]!;
     assert.equal((await post("/appointments/check-in", { ...input, checkedInAt: new Date().toISOString() }, adminCookie)).status, 400);

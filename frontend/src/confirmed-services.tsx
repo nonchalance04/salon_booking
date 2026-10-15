@@ -27,10 +27,12 @@ export function ConfirmedServices({
   admin,
   onSelect,
   disabled = false,
+  arrivalOnly = false,
 }: {
   admin: boolean;
   onSelect: (code: string) => void;
   disabled?: boolean;
+  arrivalOnly?: boolean;
 }) {
   const heading = useId();
   const [data, setData] = useState<ConfirmedBookings | null>(null);
@@ -49,7 +51,8 @@ export function ConfirmedServices({
       pageSize: "25",
       search,
     });
-    if (!admin) query.set("paymentReady", "true");
+    if (arrivalOnly) query.set("arrivalToday", "true");
+    else if (!admin) query.set("paymentReady", "true");
     void api<ConfirmedBookings>(`/reports/confirmed-services?${query}`, {
       signal: controller.signal,
     })
@@ -77,7 +80,7 @@ export function ConfirmedServices({
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [page, search, refresh, admin]);
+  }, [page, search, refresh, admin, arrivalOnly]);
   useEffect(() => {
     const update = () => {
       if (document.visibilityState === "visible")
@@ -107,12 +110,16 @@ export function ConfirmedServices({
       <div className="section-heading">
         <div>
           <h3 id={heading}>
-            {admin ? "Confirmed services" : "Ready for payment"}
+            {arrivalOnly
+              ? "Customer check-in"
+              : admin
+                ? "Confirmed services"
+                : "Ready for payment"}
           </h3>
           <p className="muted">
-            Select a customer to{" "}
-            {admin ? "review their services" : "process their service payment"}.
-            Includes all appointment dates and refreshes every 30 seconds.
+            {arrivalOnly
+              ? "Confirm physical arrival for today’s appointments. Checked-in customers are protected from automatic no-show marking and appear in the waiting queue. Refreshes every 30 seconds."
+              : `Select a customer to ${admin ? "review their services" : "process their service payment"}. Includes all appointment dates and refreshes every 30 seconds.`}
           </p>
         </div>
         {/* <button
@@ -124,7 +131,7 @@ export function ConfirmedServices({
       </div>
       <form className="cashier-search" onSubmit={submit}>
         <label>
-          Search customer or booking code (optional)
+          Search customer or booking code
           <input
             type="search"
             maxLength={100}
@@ -208,7 +215,7 @@ export function ConfirmedServices({
                         ))}
                       </td>
                       <td data-label="Action">
-                        {admin && (
+                        {(admin || arrivalOnly) && (
                           <AppointmentCheckIn
                             bookingCode={row.bookingCode}
                             customerName={`${row.customer.firstName} ${row.customer.lastName}`}
@@ -220,12 +227,14 @@ export function ConfirmedServices({
                             onCheckedIn={() => setRefresh((value) => value + 1)}
                           />
                         )}
-                        <button
-                          disabled={disabled || busy}
-                          onClick={() => onSelect(row.bookingCode)}
-                        >
-                          {admin ? "Review services" : "Process payment"}
-                        </button>
+                        {!arrivalOnly && (
+                          <button
+                            disabled={disabled || busy}
+                            onClick={() => onSelect(row.bookingCode)}
+                          >
+                            {admin ? "Review services" : "Process payment"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -236,9 +245,11 @@ export function ConfirmedServices({
             <p>
               {search
                 ? "No confirmed bookings match your search."
-                : admin
-                  ? "No confirmed services awaiting settlement."
-                  : "No visits ready for payment. An Admin must record all service outcomes first."}
+                : arrivalOnly
+                  ? "No confirmed visits awaiting service today."
+                  : admin
+                    ? "No confirmed services awaiting settlement."
+                    : "No visits ready for payment. An Admin must record all service outcomes first."}
             </p>
           )}
           <div className="actions cashier-pagination">

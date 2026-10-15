@@ -334,8 +334,8 @@ it does not query GCash or move money.
 Timely payment confirms the booking once. Late and additional captures remain
 successful financial records flagged for reconciliation, without restoring a
 released reservation. Admins can review these records and browse all fee payments.
-This phase provides a reconciliation view; refund execution and financial
-correction workflows are not added.
+This phase provides a reconciliation view; financial correction workflows are
+not added.
 
 Manual captures issue an immutable receipt in the same transaction. Provider
 captures can have a receipt issued afterward by an Admin/Cashier using **Find
@@ -487,8 +487,8 @@ select specific or Any Available staff. Search results account for retained dura
 and buffer snapshots and exclude only that appointment's existing reservation.
 Submitting revalidates eligibility and the complete schedule atomically.
 
-Cancellation releases the reservation without deleting history or automatically
-refunding the fee. Retained services keep their original financial snapshots;
+Cancellation releases the reservation without deleting history or changing
+the collected fee. Retained services keep their original financial snapshots;
 removed rows remain historical. A failed change leaves the original schedule intact.
 
 Admins use **Appointments** in their workspace to inspect bookings and mark a missed
@@ -637,8 +637,8 @@ live-delivery acceptance.
   `to` as inclusive salon-local `YYYY-MM-DD` dates (at most 366 days), plus optional
   `page` and `pageSize` (maximum 100). `POST /api/chatbot` accepts `{ "message": "Opening hours" }`
   and optional bounded `history` pairs with `role` (`user`/`model`) and `text`.
-- Collection captures use payment `paidAt`; refunds use `refundedAt`. Net cash movement
-  is not profit. Applied/unapplied and reconciliation columns describe current status;
+- Collection captures use payment `paidAt`. Net cash movement reflects historical
+  payment adjustments and is not profit. Applied/unapplied and reconciliation columns describe current status;
   reconciliation is a subset. Carried credits never generate new collections. Payment
   detail reports instead filter by attempt creation, so a delayed capture can appear
   in a different period. Every report states its date basis.

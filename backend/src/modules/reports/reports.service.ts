@@ -33,7 +33,7 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
           where: { status: { in: ["SUCCEEDED", "REFUNDED"] }, paidAt: period }, orderBy: [{ currency: "asc" }, { type: "asc" }, { method: "asc" }, { status: "asc" }, { satisfiesObligation: "asc" }, { reconciliationStatus: "asc" }], _sum: { amount: true }, _count: { _all: true } });
         const refunds = await tx.payment.groupBy({ by: ["currency", "method", "type"], where: { status: "REFUNDED", refundedAt: period }, _sum: { amount: true }, _count: { _all: true } });
         const currencies = [...new Set([...captures, ...refunds].map(r => r.currency))].sort();
-        return { from: q.from, to: q.to, timeZone, basis: "Captures by paidAt; refunds by refundedAt. Dates are inclusive in salon time. Carried credits are not new collections.",
+        return { from: q.from, to: q.to, timeZone, basis: "Collections use capture time. Net movement reflects recorded payment adjustments. Dates are inclusive in salon time. Carried credits are not new collections.",
           totals: currencies.map(currency => {
             const rows = captures.filter(r => r.currency === currency);
             const sum = (selected: typeof rows) => selected.reduce((n, r) => n.plus(r._sum.amount ?? 0), new Prisma.Decimal(0));
@@ -95,8 +95,20 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
 
     confirmedServices(actorId: string, q: ConfirmedServicesQuery) {
       return read(actorId, false, async tx => {
+        const today = q.arrivalToday === "true"
+          ? Temporal.Instant.fromEpochMilliseconds(+(await freshTime(tx))).toZonedDateTimeISO(timeZone).toPlainDate().toString()
+          : null;
         const where: Prisma.AppointmentWhereInput = {
           status: "CONFIRMED", completedAt: null, completionType: null,
+          ...(today ? {
+            startAt: reportPeriod({ from: today, to: today, page: q.page, pageSize: q.pageSize }, timeZone),
+            AND: [{ appointmentServices: {
+              some: { membershipStatus: "ACTIVE" },
+              none: { membershipStatus: "ACTIVE", OR: [
+                { outcome: { not: "SCHEDULED" } }, { outcomeFinalizedAt: { not: null } },
+              ] },
+            } }],
+          } : {}),
           ...(q.paymentReady === "true" ? { appointmentServices: {
             some: { membershipStatus: "ACTIVE" as const, outcome: "PERFORMED" as const, actualChargedAmount: { gt: 0 } },
             none: { membershipStatus: "ACTIVE" as const, outcome: "SCHEDULED" as const },

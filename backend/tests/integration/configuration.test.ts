@@ -108,6 +108,24 @@ test("profile stays singular and configuration changes keep historical snapshots
   assert.ok(await prisma.auditLog.count({ where: { entityId: f.item.id } }));
 });
 
+test("deleting staff preserves historical records, is audited, and can be repeated", async () => {
+  const f = await fixture();
+  const historical = await prisma.appointmentService.findUniqueOrThrow({ where: { id: f.booking.appointmentServices[0]!.id } });
+  await expectConflict(service.removeStaff(adminId, f.staff.id), f.booking.id);
+  assert.equal((await prisma.staff.findUniqueOrThrow({ where: { id: f.staff.id } })).isActive, true);
+  assert.equal(await prisma.auditLog.count({ where: { entityType: "Staff", entityId: f.staff.id } }), 0);
+  await prisma.appointment.update({ where: { id: f.booking.id }, data: { status: "COMPLETED" } });
+  await service.removeStaff(adminId, f.staff.id);
+  assert.equal((await prisma.staff.findUniqueOrThrow({ where: { id: f.staff.id } })).isActive, false);
+  assert.deepEqual(await prisma.appointmentService.findUniqueOrThrow({ where: { id: historical.id } }), historical);
+  assert.ok(await prisma.staffService.findUnique({ where: { id: f.qualification.id } }));
+  assert.ok(await prisma.staffSchedule.findUnique({ where: { id: f.schedule.id } }));
+  assert.ok(!(await createAvailabilityService(prisma, "Asia/Manila").catalog()).staff.some(row => row.id === f.staff.id));
+  await service.removeStaff(adminId, f.staff.id);
+  assert.equal(await prisma.auditLog.count({ where: { entityType: "Staff", entityId: f.staff.id } }), 1);
+  await assert.rejects(service.removeStaff(adminId, randomUUID()), { code: "NOT_FOUND" });
+});
+
 test("staff, service, and qualification deactivation roll back when reservations would be invalidated", async () => {
   const f = await fixture(); const count = await prisma.auditLog.count();
   await expectConflict(service.saveStaff(adminId, { firstName: "Fixture", lastName: "Changed", phone: null, isActive: false }, f.staff.id), f.booking.id);
@@ -292,6 +310,16 @@ test("public APIs expose only public configuration; Admin API enforces roles, CS
     const policy = await prisma.bookingPolicyVersion.findFirstOrThrow();
     assert.equal((await request(`/configuration/policies/${policy.id}`, "PUT", adminCookie, {})).status, 404);
     const f = await fixture();
+    const deletePath = `/configuration/staff/${f.staff.id}`;
+    assert.equal((await request(deletePath, "DELETE")).status, 401);
+    assert.equal((await request(deletePath, "DELETE", cashierCookie)).status, 403);
+    assert.equal((await request(deletePath, "DELETE", adminCookie, undefined, "https://evil.example")).status, 403);
+    assert.equal((await request("/configuration/staff/invalid", "DELETE", adminCookie)).status, 400);
+    assert.equal((await request(`/configuration/staff/${randomUUID()}`, "DELETE", adminCookie)).status, 404);
+    assert.equal((await request(deletePath, "DELETE", adminCookie)).status, 409);
+    const deletableStaff = await prisma.staff.create({ data: { firstName: "Delete", lastName: "Test" } });
+    assert.equal((await request(`/configuration/staff/${deletableStaff.id}`, "DELETE", adminCookie)).status, 204);
+    assert.equal((await prisma.staff.findUniqueOrThrow({ where: { id: deletableStaff.id } })).isActive, false);
     const skillsPath = `/configuration/staff/${f.staff.id}/skills`;
     const skills = { services: [{ serviceId: f.item.id, commissionRate: "0.4" }] };
     assert.equal((await request(skillsPath, "PUT", "", skills)).status, 401);

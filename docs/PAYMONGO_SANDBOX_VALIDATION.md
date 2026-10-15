@@ -452,8 +452,8 @@ It is a configuration procedure; this guide has not deployed or enabled it for y
    confirmation within the hold deadline, and staff-issued receipt. Do not change
    the fee arbitrarily to force a test; use the configured booking policy.
 9. Reconcile that transaction with the merchant dashboard and preserve operational
-   records. The application does not implement automated refund execution; follow
-   the salon's approved merchant reconciliation procedure for any required refund.
+   records. Follow the salon's approved merchant reconciliation procedure for
+   payment discrepancies; the application provides review only.
 10. Monitor callback failures, uncertain checkout attempts, late captures, worker
     health, and receipts using [Operations](OPERATIONS.md). Use a stable production
     domain rather than the temporary development tunnel.

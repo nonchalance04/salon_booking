@@ -449,3 +449,15 @@ Use the customer-requested greeting and full confirmation wording, including the
 ## 2026-10-14 — Cashier payment-only workspace
 
 At the user's request, restrict the cashier UI and backend mutation permissions to payment processing and receipts. Replace the cashier dashboard/navigation with a payment-ready visit list, booking-code payment/receipt lookup, and service collection. Move initial outcome recording, outcome corrections, customer arrival recording, and no-service closure to Admin; enforce roles in services as well as HTTP routes. Preserve current payment collection, Decimal amounts, idempotency, historical receipts, and commission calculations. Cashiers may read payment-related booking details and existing collection APIs; hiding reports does not remove read access. No database migration is required.
+
+
+## 2026-10-16 — Cashier customer check-in
+
+At the user’s request, extend customer arrival recording to active Cashiers as well as Admins, superseding the arrival restriction in the 2026-10-14 payment-only workspace decision. Add a separate cashier list for today’s confirmed visits awaiting service, using server time and the salon timezone with search and pagination. Keep payment-ready filtering separate. Reuse the existing transactional check-in, account and appointment locks, first-arrival preservation, and actor-specific audit. Service outcomes, no-service closure, and no-show corrections remain Admin-only. No database migration is required.
+
+Cashiers can acknowledge customers at the front desk without waiting for an Admin. Recording physical arrival protects present customers from automatic no-show marking and makes them visible in the checked-in waiting queue for staff follow-up. Arrival does not record treatment, completion, or payment.
+
+
+## 2026-10-16 — Display only operational payment capabilities
+
+Remove unsupported payment-return terminology and metrics from the dashboard, collection tables, payment help, cancellation copy and guided chatbot responses. Keep collected-fee wording explicit: cancellation releases the reservation and leaves the collected fee unchanged. Retain existing database enum values, historical fields, provider validation and financial calculations for compatibility and data integrity. Historical returned-payment states use a readable display label; no transaction state is rewritten and no money movement feature is introduced.

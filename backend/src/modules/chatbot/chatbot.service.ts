@@ -3,7 +3,7 @@ type Configuration = ReturnType<typeof createConfigurationService>;
 export type ChatbotSource = { [K in "publicSalon" | "publicServices" | "publicPolicy"]: () => Promise<Awaited<ReturnType<Configuration[K]>>> };
 export function chatbotTopic(message: string) {
   const text = message.toLowerCase();
-  if (/\b(cancel|cancellation|refund)\b/.test(text)) return "cancel";
+  if (/\b(cancel|cancellation)\b/.test(text)) return "cancel";
   if (/\b(reschedule|rescheduling|change|move)\b/.test(text)) return "reschedule";
   if (/\b(available|availability|slot|today|tomorrow)\b/.test(text)) return "availability";
   if (/\b(service|services|price|prices|cost|haircut|color|colour|treatment)\b/.test(text)) return "services";
@@ -37,7 +37,7 @@ export function createChatbotService(source: ChatbotSource) {
         answer = p ? `Current policy for new bookings (version ${p.version}): appointment fee ${p.appointmentFeeType === "FIXED" ? `PHP ${p.appointmentFeeAmount.toFixed(2)}` : `${p.appointmentFeeAmount.toString()}%`}; payment hold ${p.bookingHoldMinutes} minutes; book at least ${p.minimumBookingLeadMinutes} minutes ahead and up to ${p.advanceBookingDays} days ahead. Up to ${p.maxReschedules} reschedules, at least ${p.rescheduleCutoffHours} hours before the appointment. Cancellation cutoff: ${p.cancellationCutoffHours} hours before the appointment. No-show recovery grace: ${p.noShowGraceHours} hours. Existing appointments retain their original policy. The appointment fee is separate from the post-service charge. Late payments require salon review and do not restore expired reservations.` : "Booking policies are not configured yet. Please contact the salon.";
         break;
       }
-      case "cancel": answer = "Open Manage my appointment using your booking code and secure guest token. Only eligible confirmed appointments can be cancelled, at or before the cancellation cutoff in that appointment’s original policy. After the cutoff, contact the salon. Cancellation releases the reservation; refunds are not automatic."; break;
+      case "cancel": answer = "Open Manage my appointment using your booking code and secure guest token. Only eligible confirmed appointments can be cancelled, at or before the cancellation cutoff in that appointment’s original policy. After the cutoff, contact the salon. Cancellation releases the reservation. The collected appointment fee remains unchanged."; break;
       case "reschedule": answer = "Open Manage my appointment using your booking code and secure guest token. An eligible confirmed appointment may be rescheduled within its original policy’s cutoff and reschedule limit. Choose services, staff and a new time; the backend checks the complete plan. Your current reservation remains if the change fails."; break;
       case "availability": answer = "Use Find a time and book to select your services, staff preference and date. That screen requests live availability from the salon’s scheduling service. Suggested times remain subject to revalidation when you book; this chat cannot confirm or reserve a time."; break;
       case "booking": answer = "Choose Find a time and book, select services and staff preferences, then choose an available date and time. Enter your contact details and submit. Keep the booking code and secure guest token privately. Pay the appointment fee before the hold expires; a booking is confirmed only after the backend verifies timely payment. Use Manage my appointment to view its status."; break;

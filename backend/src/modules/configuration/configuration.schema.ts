@@ -22,6 +22,7 @@ export const serviceSchema = z.object({
   durationMinutes: integer.min(1), bufferMinutes: integer.nullable(), isActive: z.boolean(),
 }).strict();
 export const staffSchema = z.object({ firstName: text, lastName: text, phone: z.string().trim().max(50).nullable(), isActive: z.boolean() }).strict();
+export const staffUpdateSchema = staffSchema.extend({ lastName: z.string().trim().max(200).default("") });
 export const qualificationSchema = z.object({
   staffId: z.uuid(), serviceId: z.uuid(), isActive: z.boolean(),
   commissionRate: z.string().regex(/^(0(\.\d{1,4})?|1(\.0{1,4})?)$/),

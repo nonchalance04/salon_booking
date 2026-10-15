@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { paymentStatusLabel } from "./payment-presentation";
 import { cashChange } from "./cashier-money";
 import { ConfirmedServices } from "./confirmed-services";
 import { ReceiptView, type Receipt } from "./receipt";
@@ -52,7 +53,7 @@ export function SettlementWorkspace({ admin, initialCode, onFinalized, onBack }:
         void act(async () => { accept((await api<{ appointment: Appointment }>("/settlement/close", { method: "POST", body: JSON.stringify({ bookingCode: row.bookingCode, revision: row.revision }) })).appointment); setNotice("Appointment closed with no performed services."); onFinalized?.(); });
       }}>Finalize no-service closure</button>}
       {admin && row.commissions && row.commissions.length > 0 && <section className="outcomes-commissions"><h3>Final commissions</h3><div className="table-wrap"><table><thead><tr><th>Service</th><th>Service amount</th><th>Fee allocation</th><th>Base</th><th>Rate</th><th>Commission</th></tr></thead><tbody>{row.commissions.map(c => <tr key={c.appointmentServiceId}><td>{row.services.find(s => s.id === c.appointmentServiceId)?.name}</td><td>{c.serviceAmount}</td><td>{c.allocatedAppointmentFee}</td><td>{c.commissionBase}</td><td>{c.commissionRate}</td><td>{c.commissionAmount}</td></tr>)}</tbody></table></div></section>}
-      {row.payments.length > 0 && <section className="outcomes-payments"><h3>Payment history & receipts</h3>{row.payments.map(p => <div className="outcomes-payment" key={p.id}><div className="outcomes-payment-heading"><strong>{p.type.replaceAll("_", " ")}</strong><span className="badge">{p.status}</span><strong>PHP {p.amount}</strong></div>{p.receipt && <div id={p.receipt.receiptNumber}><ReceiptView receipt={p.receipt} /></div>}</div>)}</section>}
+      {row.payments.length > 0 && <section className="outcomes-payments"><h3>Payment history & receipts</h3>{row.payments.map(p => <div className="outcomes-payment" key={p.id}><div className="outcomes-payment-heading"><strong>{p.type.replaceAll("_", " ")}</strong><span className="badge">{paymentStatusLabel(p.status)}</span><strong>PHP {p.amount}</strong></div>{p.receipt && <div id={p.receipt.receiptNumber}><ReceiptView receipt={p.receipt} /></div>}</div>)}</section>}
       {row.status === "COMPLETED" && onBack && <button className="primary" disabled={busy} onClick={onBack}>Finish & return to payments</button>}
     </div>}
   </section>;

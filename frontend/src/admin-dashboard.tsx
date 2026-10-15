@@ -1,4 +1,4 @@
-import { WaitingQueue } from "./waiting-queue";
+// import { WaitingQueue } from "./waiting-queue";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ConfirmedServices } from "./confirmed-services";
@@ -36,7 +36,6 @@ type Collections = {
   totals: {
     currency: string;
     captured: string;
-    refunded: string;
     netCashMovement: string;
   }[];
 };
@@ -142,7 +141,7 @@ export function AdminDashboard({
           Loading salon activity…
         </p>
       )}
-      <WaitingQueue onSelect={onSettlement} />
+      {/* <WaitingQueue onSelect={onSettlement} /> */}
       <ConfirmedServices admin onSelect={onSettlement} />
       {data && collections && (
         <>
@@ -192,8 +191,7 @@ export function AdminDashboard({
               <div>
                 <h3>Today’s financial summary</h3>
                 <p className="muted">
-                  Collections use capture time; refunds use refund time;
-                  commissions use finalization time.
+                  Collections use capture time; commissions use finalization time.
                 </p>
               </div>
               <button onClick={() => onReport("payments")}>
@@ -206,7 +204,6 @@ export function AdminDashboard({
                   {
                     currency: "PHP",
                     captured: "0",
-                    refunded: "0",
                     netCashMovement: "0",
                   },
                 ]
@@ -215,10 +212,6 @@ export function AdminDashboard({
                 <div>
                   <small>Collections · {total.currency}</small>
                   <strong>{money(total.captured, total.currency)}</strong>
-                </div>
-                <div>
-                  <small>Refunds · {total.currency}</small>
-                  <strong>{money(total.refunded, total.currency)}</strong>
                 </div>
                 <div>
                   <small>Net collections · {total.currency}</small>
@@ -240,8 +233,8 @@ export function AdminDashboard({
               <span aria-hidden="true">→</span>
             </button>
             <p className="muted admin-note">
-              Net collections are collections minus refunds. Commissions are
-              shown separately and are not deducted here. Carried booking
+              Net collections reflect recorded payment adjustments. Commissions
+              are shown separately and are not deducted here. Carried booking
               credits are not new collections.
             </p>
           </div>

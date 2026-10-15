@@ -93,7 +93,8 @@ Administrative actions must never bypass data-integrity, authorization, scheduli
 
 A Cashier may:
 
-- View appointments relevant to post-service settlement.
+- View appointments relevant to customer arrival and post-service settlement.
+- Record physical customer arrival for eligible confirmed appointments.
 - View booked services.
 - View customer information required for payment processing.
 - View the appointment-fee payment status.
@@ -105,7 +106,6 @@ A Cashier may:
 A Cashier may not:
 
 - Record or correct service outcomes.
-- Record customer arrival.
 - Finalize no-service closures.
 - Manage services.
 - Manage staff.
@@ -672,7 +672,7 @@ If a staff assignment must change, the newly assigned staff member must have an 
 
 # Customer Arrival / Check-In
 
-An active Admin may record arrival for a CONFIRMED, uncompleted appointment on its scheduled salon-local date. Early arrival on that date is allowed; check-in on another date or after recorded active service outcomes is rejected. Staff must confirm the customer is physically present.
+An active Admin or Cashier may record arrival for a CONFIRMED, uncompleted appointment on its scheduled salon-local date. Early arrival on that date is allowed; check-in on another date or after recorded active service outcomes is rejected. Staff must confirm the customer is physically present.
 
 Check-in records `checkedInAt` using server/database time and `checkedInByUserId` using the authenticated account. These fields are recorded atomically with a BOOKING_CHECKED_IN audit event. Repeated or concurrent check-ins preserve the first arrival and first actor and do not duplicate audit events. Clients cannot supply the timestamp or actor.
 
@@ -1357,7 +1357,7 @@ Frontend visibility is not a security mechanism.
 Examples:
 
 - Admin-only operations must be enforced by the API.
-- Service-payment settlement requires an active Cashier. Outcome recording, arrival recording, and no-service closure require an active Admin.
+- Service-payment settlement requires an active Cashier. Arrival recording requires an active Admin or Cashier. Outcome recording and no-service closure require an active Admin.
 - Customer/Guest appointment-management requests must verify secure appointment access.
 - No-show marking must require authorized Admin access.
 
@@ -1433,6 +1433,6 @@ Include all dates so old unresolved arrivals remain visible. Sort by oldest chec
 The queue refreshes every 30 seconds while visible, on focus, after local arrival changes, and on manual refresh. Reviewing a queue entry opens the existing service workspace. Queue reads do not change appointment status, staff assignments, payments or service outcomes.
 
 
-## Cashier payment-only workspace (2026-10-14)
+## Cashier check-in and payment workspace (updated 2026-10-16)
 
-The cashier workspace handles service-payment collection and payment receipts only. It lists confirmed, uncompleted visits with every active service outcome recorded and at least one positive performed-service charge. Booking-code lookup remains available for payment review and receipts; it cannot bypass settlement prerequisites. Cashiers cannot record arrival, edit service outcomes, or finalize no-service closures, including through direct API calls. Admins record initial outcomes and corrections and close visits with no performed services. Existing payment amounts, receipt history, commission formulas, and transaction/concurrency rules remain authoritative. Manual appointment-fee payment APIs remain authorized payment operations; the separate cashier fee menu remains removed.
+The cashier workspace handles customer check-in, service-payment collection and payment receipts. It lists confirmed, uncompleted visits with every active service outcome recorded and at least one positive performed-service charge. Booking-code lookup remains available for payment review and receipts; it cannot bypass settlement prerequisites. Cashiers may record arrival through the same validated, audited check-in workflow as Admins. A separate customer check-in list shows today’s confirmed, uncompleted visits with active services and no recorded/finalized active outcomes, including already checked-in visits. Cashiers cannot edit service outcomes or finalize no-service closures, including through direct API calls. Admins record initial outcomes and corrections and close visits with no performed services. Existing payment amounts, receipt history, commission formulas, and transaction/concurrency rules remain authoritative. Manual appointment-fee payment APIs remain authorized payment operations; the separate cashier fee menu remains removed.

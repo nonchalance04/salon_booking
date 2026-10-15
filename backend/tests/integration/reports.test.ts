@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { before, after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { Pool } from "pg";
+import { Temporal } from "@js-temporal/polyfill";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../generated/prisma/client.js";
 import { createDatabasePool } from "../../src/database/pool.js";
@@ -302,4 +303,49 @@ test("waiting queue includes only checked-in visits without active outcomes, old
   assert.equal((await reports.waitingQueue(cashier.id, q)).total, 1);
   await prisma.user.update({ where: { id: cashier.id }, data: { isActive: false } });
   await assert.rejects(reports.waitingQueue(cashier.id, q));
+});
+
+
+test("cashier arrival list uses today's salon date, active outcomes and bounded search/pagination", async () => {
+  const cashier = await actor("CASHIER");
+  const prefix = `arrival-${randomUUID()}`;
+  const today = Temporal.Now.zonedDateTimeISO("Asia/Manila").startOfDay();
+  const start = new Date(today.epochMilliseconds);
+  const next = new Date(today.add({ days: 1 }).epochMilliseconds);
+  const staff = await prisma.staff.create({ data: { firstName: "Arrival", lastName: "Stylist" } });
+  const service = await prisma.service.create({ data: { name: "Arrival service", price: "50", durationMinutes: 30 } });
+  async function visit(suffix: string, extra: object = {}) {
+    const a = await appointment({ bookingCode: `${prefix}-${suffix}`, startAt: start, endAt: new Date(+start + 1800000), ...extra });
+    const item = await prisma.appointmentService.create({ data: {
+      appointmentId: a.id, serviceId: service.id, staffId: staff.id, assignmentMode: "SPECIFIC", sequenceNo: 1,
+      serviceNameSnapshot: "Arrival service", priceSnapshot: "50", durationMinutesSnapshot: 30,
+      bufferMinutesSnapshot: 0, commissionRateSnapshot: "0.4", scheduledStartAt: a.startAt,
+      scheduledEndAt: new Date(+a.startAt + 1800000), reservedUntilAt: new Date(+a.startAt + 1800000),
+    } });
+    return { a, item };
+  }
+  const first = await visit("eligible");
+  const arrived = await visit("arrived", { startAt: new Date(+next - 1), checkedInAt: new Date(), checkedInByUser: { connect: { id: cashier.id } } });
+  await visit("yesterday", { startAt: new Date(+start - 1) });
+  await visit("tomorrow", { startAt: next });
+  await visit("cancelled", { status: "CANCELLED" });
+  await visit("pending", { status: "PENDING_PAYMENT" });
+  await visit("completed", { completedAt: new Date() });
+  const performed = await visit("performed");
+  await prisma.appointmentService.update({ where: { id: performed.item.id }, data: { outcome: "PERFORMED" } });
+  const finalized = await visit("finalized");
+  await prisma.appointmentService.update({ where: { id: finalized.item.id }, data: { outcomeFinalizedAt: new Date() } });
+  const removed = await visit("removed");
+  await prisma.appointmentService.update({ where: { id: removed.item.id }, data: { membershipStatus: "REMOVED" } });
+  await prisma.appointmentService.create({ data: {
+    ...first.item, id: randomUUID(), sequenceNo: 2, membershipStatus: "REMOVED", outcome: "PERFORMED",
+  } });
+  const query = confirmedServicesQuery.parse({ search: prefix, arrivalToday: "true", pageSize: 1 });
+  const result = await reports.confirmedServices(cashier.id, query);
+  assert.equal(result.total, 2);
+  assert.equal(result.rows[0]!.bookingCode, first.a.bookingCode);
+  const page2 = await reports.confirmedServices(cashier.id, { ...query, page: 2 });
+  assert.equal(page2.rows[0]!.bookingCode, arrived.a.bookingCode);
+  assert.equal(page2.rows[0]!.checkedInByUser!.firstName, cashier.firstName);
+  assert.equal((await reports.confirmedServices(cashier.id, { ...query, paymentReady: "true" })).total, 0);
 });

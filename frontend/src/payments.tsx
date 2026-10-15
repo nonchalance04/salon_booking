@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ReceiptView } from "./receipt";
 import { api } from "./api";
 import { startPaymentSync } from "./payment-sync";
+import { paymentStatusLabel } from "./payment-presentation";
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
 export type FeePayment = { id: string; amount: string; status: string; reconciliationStatus: string; receipt: { receiptNumber: string; receiptSnapshot?: Record<string, unknown> } | null };
 export function FeePaymentControls({ bookingCode, token, onChange, pending }: { bookingCode: string; token: string; onChange: () => Promise<void>; pending?: FeePayment }) {
@@ -66,7 +67,7 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
 }
 export function FeePaymentHistory({ payments }: { payments: FeePayment[] }) {
   return payments.length ? <section aria-label="Appointment-fee payments"><h3>Appointment-fee payments</h3>{payments.map(p => <div key={p.id} className="payment-record">
-    <p>PHP {p.amount} · {p.status}{p.reconciliationStatus === "REQUIRED" && " · Salon review required"}</p>
+    <p>PHP {p.amount} · {paymentStatusLabel(p.status)}{p.reconciliationStatus === "REQUIRED" && " · Salon review required"}</p>
     {p.reconciliationStatus === "REQUIRED" && <p>This payment was not applied to the booking fee. Contact the salon for reconciliation.</p>}
     {p.receipt && <details><summary>Receipt {p.receipt.receiptNumber}</summary>{p.receipt.receiptSnapshot && <ReceiptView receipt={{ receiptNumber: p.receipt.receiptNumber, receiptSnapshot: p.receipt.receiptSnapshot }} />}</details>}
   </div>)}</section> : null;
@@ -127,10 +128,10 @@ export function PaymentsWorkspace({ admin, initialCode }: { admin: boolean; init
           await api("/payments/recover-checkout", { method: "POST", body: JSON.stringify({ paymentId: String(data.get("paymentId")).trim(), checkoutReference: String(data.get("checkoutReference")).trim() }) });
           setNotice("PayMongo checkout verified. Refresh the booking to view its current payment status."); await loadReview();
         }); }}><label>Payment attempt ID<input name="paymentId" required /></label><label>PayMongo checkout session ID<input name="checkoutReference" required pattern="cs_[A-Za-z0-9]+" /></label><button disabled={busy}>Verify and recover checkout</button></form>
-      </details><p>Review late or additional captures with the salon’s payment records. Financial corrections and refunds follow the salon’s procedure.</p>
+      </details><p>Review late or additional captures with the salon’s payment records. Contact the salon administrator about payment discrepancies.</p>
       <label className="checkbox"><input type="checkbox" checked={onlyReview} onChange={event => setOnlyReview(event.target.checked)} /> Show only payments requiring reconciliation</label>
       <button disabled={busy} onClick={() => void act(() => loadReview())}>Refresh payments</button>
-      <div className="table-wrap"><table><thead><tr><th>Booking</th><th>Payment</th><th>Reference</th><th>Review</th></tr></thead><tbody>{review.map(p => <tr key={p.id}><td><button disabled={busy} onClick={() => void act(() => lookup(p.appointment.bookingCode))}>{p.appointment.bookingCode}</button><br />{p.appointment.status}</td><td>PHP {p.amount}<br />{p.status} · {p.provider}</td><td>{p.externalReference ?? "Pending"}</td><td>{p.reconciliationReason?.replaceAll("_", " ") ?? p.reconciliationStatus}</td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Booking</th><th>Payment</th><th>Reference</th><th>Review</th></tr></thead><tbody>{review.map(p => <tr key={p.id}><td><button disabled={busy} onClick={() => void act(() => lookup(p.appointment.bookingCode))}>{p.appointment.bookingCode}</button><br />{p.appointment.status}</td><td>PHP {p.amount}<br />{paymentStatusLabel(p.status)} · {p.provider}</td><td>{p.externalReference ?? "Pending"}</td><td>{p.reconciliationReason?.replaceAll("_", " ") ?? p.reconciliationStatus}</td></tr>)}</tbody></table></div>
       {!review.length && <p>No matching payments.</p>}{cursor && <button disabled={busy} onClick={() => void act(() => loadReview(cursor))}>Load more</button>}
     </section>}
   </section>;

@@ -126,6 +126,15 @@ export function createConfigurationService(prisma: PrismaClient, timeZone: strin
         return row;
       });
     },
+    removeStaff(actorId: string, id: string) {
+      return write(actorId, "shared", [id], async tx => {
+        const before = required(await tx.staff.findUnique({ where: { id } }));
+        if (!before.isActive) return;
+        await protect(tx, { staffId: id }, () => true);
+        const row = await tx.staff.update({ where: { id }, data: { isActive: false } });
+        await audit(tx, actorId, "Staff", id, before, row);
+      });
+    },
     saveStaffPublicProfile(actorId: string, id: string, input: StaffPublicProfileInput) {
       return write(actorId, "shared", [id], async tx => {
         const before = required(await tx.staff.findUnique({ where: { id } }));

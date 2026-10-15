@@ -236,8 +236,8 @@ export function AppointmentManagement({
         <fieldset disabled={busy}>
           <legend>Confirm cancellation</legend>
           <p>
-            This releases your reserved time. The appointment fee is not
-            automatically refunded.
+            This releases your reserved time. The collected appointment fee
+            remains unchanged.
           </p>
           <button onClick={() => void cancel()}>Confirm cancellation</button>
           <button onClick={() => setConfirmCancel(false)}>
@@ -629,7 +629,7 @@ export function AdminAppointments({
                 placeholder="Search name or booking code"
               />
             </label>
-            <label>
+            {/* <label>
               Needs attention
               <select
                 name="attention"
@@ -639,7 +639,7 @@ export function AdminAppointments({
                 <option value="pending-fees">Active payment holds</option>
                 <option value="unsettled">Unsettled services</option>
               </select>
-            </label>
+            </label> */}
           </div>
           <div className="actions">
             <button className="primary">Apply filters</button>

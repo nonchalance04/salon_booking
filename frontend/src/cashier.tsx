@@ -12,9 +12,10 @@ export function CashierDashboard() {
   return (
     <section aria-labelledby="cashier-title">
       <p className="eyebrow">CASHIER DESK</p>
-      <h2 id="cashier-title">Process payments</h2>
+      <h2 id="cashier-title">Check in customers & process payments</h2>
       <p className="muted">
-        Select a visit ready for payment, verify the money received, and issue
+        Confirm customer arrival when they reach the salon. After service,
+        select a visit ready for payment, verify the money received, and issue
         the receipt. An Admin records service outcomes before collection.
       </p>
       {selected ? (
@@ -26,6 +27,7 @@ export function CashierDashboard() {
         />
       ) : (
         <>
+          <ConfirmedServices admin={false} arrivalOnly onSelect={setSelected} />
           <ConfirmedServices admin={false} onSelect={setSelected} />
           <details>
             <summary>Find a payment or receipt by booking code</summary>
