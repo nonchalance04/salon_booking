@@ -15,6 +15,56 @@
 @media(max-width:1000px){.admin-finance-grid,.admin-scheduling-grid{grid-template-columns:1fr}.admin-finance-grid{gap:16px}.admin-finance-grid>div{display:flex;justify-content:space-between;gap:16px;align-items:baseline}.admin-panel{padding:20px}.admin-commission{flex-wrap:wrap}}
 @media(max-width:540px){.admin-finance-grid>div{display:block}.admin-action-grid{grid-template-columns:1fr}.admin-commission strong{font-size:22px}}
 
+/* Service outcomes and finalized commission review. */
+.outcomes-workspace{max-width:1320px;margin-inline:auto;min-width:0}
+.outcomes-workspace .outcomes-page-heading{margin-bottom:24px;max-width:78ch}
+.outcomes-workspace .outcomes-page-heading>p:last-child{font-size:14px;line-height:1.7}
+.outcomes-workspace .outcomes-lookup{padding:18px 22px;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:20px}
+.outcomes-workspace .outcomes-lookup summary{cursor:pointer;font-size:14px;font-weight:600}
+.outcomes-workspace .outcomes-lookup form{display:flex;align-items:flex-end;gap:16px;border:0;margin:20px 0 0;padding:0}
+.outcomes-workspace .outcomes-lookup label{flex:1;margin:0;max-width:480px}
+.clique-main .outcomes-workspace .outcomes-detail{margin:24px 0 0;padding:28px;border-radius:16px}
+.outcomes-visit-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:24px}
+.outcomes-visit-heading .eyebrow{margin-bottom:8px}
+.outcomes-visit-heading h3{font-size:25px;margin:0 0 12px;overflow-wrap:anywhere}
+.outcomes-completion{display:inline-block;margin-left:12px;font-size:12px;color:#686868}
+.outcomes-workspace .outcomes-financial-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;padding:22px;background:#f6f6f7;border:1px solid var(--line);border-radius:12px;margin-bottom:28px}
+.outcomes-financial-summary>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.outcomes-financial-summary>div>span{font-size:12px;color:#686868}
+.outcomes-financial-summary strong{font-size:26px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.outcomes-financial-summary>p{grid-column:1 / -1;font-size:12px;line-height:1.6;margin:0;padding-top:16px;border-top:1px solid var(--line);color:#686868}
+.outcomes-editor fieldset{min-width:0;border:0;margin:0;padding:0}
+.outcomes-editor legend{font-size:19px;font-weight:700;padding:0;margin-bottom:8px}
+.outcomes-editor fieldset>p{font-size:13px;margin-bottom:18px}
+.outcomes-service-list{display:grid;gap:12px}
+.outcomes-workspace .outcomes-service{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);align-items:center;gap:24px;padding:20px;margin:0;border:1px solid var(--line);border-radius:12px}
+.outcomes-service-copy{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.outcomes-service-copy strong{font-size:16px}
+.outcomes-service-copy small{font-weight:400;font-size:12px}
+.outcomes-service-copy>span{margin-top:4px;font-variant-numeric:tabular-nums}
+.outcomes-service-control{display:flex;flex-direction:column;gap:8px;font-size:12px;color:#686868}
+.outcomes-service-control select{min-height:46px}
+.outcomes-save{display:flex;justify-content:flex-end;padding:18px 0 24px}
+.outcomes-editor fieldset:disabled .outcomes-service{background:#fafafa}
+.outcomes-commissions,.outcomes-payments{margin-top:28px;padding-top:24px;border-top:1px solid var(--line)}
+.outcomes-commissions h3,.outcomes-payments h3{font-size:19px;margin-bottom:16px}
+.outcomes-commissions table{white-space:normal;min-width:660px}
+.outcomes-commissions th,.outcomes-commissions td{padding:16px;font-variant-numeric:tabular-nums}
+.outcomes-commissions td:not(:first-child),.outcomes-commissions th:not(:first-child){text-align:right}
+.outcomes-commissions td:last-child{font-weight:700;background:#faf7e9}
+.outcomes-payment{border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:14px;min-width:0}
+.outcomes-payment-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:12px}
+.outcomes-payment-heading>strong:last-child{margin-left:auto;font-size:16px;font-variant-numeric:tabular-nums}
+@media(max-width:760px){
+  .clique-main .outcomes-workspace .outcomes-detail{padding:18px}
+  .outcomes-visit-heading{flex-direction:column;gap:16px}
+  .outcomes-workspace .outcomes-financial-summary{padding:16px;grid-template-columns:1fr;gap:16px}
+  .outcomes-workspace .outcomes-service{grid-template-columns:1fr;padding:16px;gap:16px}
+  .outcomes-workspace .outcomes-lookup form{flex-direction:column;align-items:stretch}
+  .outcomes-save button{width:100%;min-height:44px}
+  .outcomes-payment{padding:12px}
+}
+
 /* Shared dashboard lists: keep long services and row actions within their columns. */
 .clique-dashboard-clock{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;padding:14px 20px;border-radius:10px;background:var(--charcoal);color:#fff;text-align:right;font-variant-numeric:tabular-nums}
 .clique-dashboard-clock>span{font-size:13px}
