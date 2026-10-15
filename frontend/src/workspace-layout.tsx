@@ -480,7 +480,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
           )}
           {cards ? (
             <>
-              <label className="clique-search">
+              {/* <label className="clique-search">
                 <span className="sr-only">Search {heading[0]}</span>
                 <svg
                   width="20"
@@ -500,7 +500,8 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={`Search ${heading[0].toLowerCase()}`}
                 />
-              </label>
+                input
+              </label> */}
               <h2 className="clique-section-label">
                 {page === "master"
                   ? "Core configurations"
