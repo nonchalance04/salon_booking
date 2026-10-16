@@ -95,6 +95,8 @@ A Cashier may:
 
 - View appointments relevant to customer arrival and post-service settlement.
 - Record physical customer arrival for eligible confirmed appointments.
+- Record and correct service outcomes before finalization.
+- Correct eligible no-shows with a reason and confirmation of physical presence.
 - View booked services.
 - View customer information required for payment processing.
 - View the appointment-fee payment status.
@@ -105,7 +107,6 @@ A Cashier may:
 
 A Cashier may not:
 
-- Record or correct service outcomes.
 - Finalize no-service closures.
 - Manage services.
 - Manage staff.
@@ -713,13 +714,13 @@ If no-show recovery is allowed:
 9. The missed AppointmentService intervals remain historical and do not block future availability.
 10. Only one no-show recovery appointment may be created from the same NO_SHOW appointment.
 
-## Admin No-Show Correction / Late Arrival
+## Staff No-Show Correction / Late Arrival
 
-An active Admin may restore an unresolved NO_SHOW to CONFIRMED only with a nonblank reason and explicit confirmation that the customer is physically present. The visit must be on the current salon date and its original end time must not have passed. It must have active services, no linked replacement booking (including cancelled/expired replacements), no check-in, no completion record and no recorded active service outcomes.
+An active Admin or Cashier may restore an unresolved NO_SHOW to CONFIRMED only with a nonblank reason and explicit confirmation that the customer is physically present. The visit must be on the current salon date and its original end time must not have passed. It must have active services, no linked replacement booking (including cancelled/expired replacements), no check-in, no completion record and no recorded active service outcomes.
 
 Under the same salon/staff/appointment locks as booking and recovery, verify the full original active service intervals including buffers against current operating hours, staff schedules, active staff and qualifications, closures, unavailability and blocking reservations (including live payment holds). Existing service snapshots are retained; this action does not move or extend the visit. If any original interval is unavailable or the visit has ended, reject restoration and arrange a new available booking.
 
-Restoration sets CONFIRMED and records check-in at fresh database time by the correcting Admin, preventing immediate automatic no-show marking. Clear the current noShowAt and recovery deadline fields, and preserve their previous values, the original no-show event, correcting Admin and reason in the audit history. Write BOOKING_NO_SHOW_CORRECTED atomically with restoration. No payment, refund, fee credit, reschedule count or policy changes occur. Concurrent duplicate corrections cannot create duplicate restoration audit events. Ordinary check-in and customer recovery cannot perform this exception.
+Restoration sets CONFIRMED and records check-in at fresh database time by the correcting staff member, preventing immediate automatic no-show marking. Clear the current noShowAt and recovery deadline fields, and preserve their previous values, the original no-show event, correcting staff member and reason in the audit history. Write BOOKING_NO_SHOW_CORRECTED atomically with restoration. No payment, refund, fee credit, reschedule count or policy changes occur. Concurrent duplicate corrections cannot create duplicate restoration audit events. Ordinary check-in and customer recovery cannot perform this exception.
 
 ## No-Show Recovery With Valid Carried Appointment-Fee Credit
 
@@ -794,9 +795,9 @@ Each AppointmentService uses a final operational outcome:
 - PERFORMED
 - NOT_PERFORMED
 
-Before post-service settlement or no-service closure, an Admin records final service outcomes.
+Before post-service settlement or no-service closure, an active Admin or Cashier records final service outcomes.
 
-An Admin may correct those outcomes before finalization.
+An active Admin or Cashier may correct those outcomes before finalization.
 
 A CONFIRMED appointment may contain:
 
@@ -1357,7 +1358,7 @@ Frontend visibility is not a security mechanism.
 Examples:
 
 - Admin-only operations must be enforced by the API.
-- Service-payment settlement requires an active Cashier. Arrival recording requires an active Admin or Cashier. Outcome recording and no-service closure require an active Admin.
+- Service-payment settlement requires an active Cashier. Arrival recording requires an active Admin or Cashier. Outcome recording and no-show correction require an active Admin or Cashier. No-service closure requires an active Admin.
 - Customer/Guest appointment-management requests must verify secure appointment access.
 - No-show marking must require authorized Admin access.
 
@@ -1435,4 +1436,9 @@ The queue refreshes every 30 seconds while visible, on focus, after local arriva
 
 ## Cashier check-in and payment workspace (updated 2026-10-16)
 
-The cashier workspace handles customer check-in, service-payment collection and payment receipts. It lists confirmed, uncompleted visits with every active service outcome recorded and at least one positive performed-service charge. Booking-code lookup remains available for payment review and receipts; it cannot bypass settlement prerequisites. Cashiers may record arrival through the same validated, audited check-in workflow as Admins. A separate customer check-in list shows today’s confirmed, uncompleted visits with active services and no recorded/finalized active outcomes, including already checked-in visits. Cashiers cannot edit service outcomes or finalize no-service closures, including through direct API calls. Admins record initial outcomes and corrections and close visits with no performed services. Existing payment amounts, receipt history, commission formulas, and transaction/concurrency rules remain authoritative. Manual appointment-fee payment APIs remain authorized payment operations; the separate cashier fee menu remains removed.
+The cashier workspace handles customer check-in, service outcomes, eligible no-show corrections, service-payment collection and payment receipts. It lists confirmed, uncompleted visits across all dates, including pending outcomes; service collection requires every active outcome to be recorded and at least one positive performed-service charge. Booking-code lookup remains available for payment review and receipts; it cannot bypass settlement prerequisites. Cashiers may record arrival through the same validated, audited check-in workflow as Admins. A separate customer check-in list shows today’s confirmed, uncompleted visits with active services and no recorded/finalized active outcomes, including already checked-in visits. Cashiers may record and correct service outcomes before finalization and correct eligible no-shows through the validated, audited restoration workflow. The confirmed-services list includes visits with pending outcomes, and booking-code lookup opens no-shows for review and correction. Cashiers cannot finalize no-service closures, including through direct API calls; Admins close visits with no performed services. Existing payment amounts, receipt history, commission formulas, and transaction/concurrency rules remain authoritative. Manual appointment-fee payment APIs remain authorized payment operations; the separate cashier fee menu remains removed.
+
+
+## Automatic customer e-receipts (updated 2026-10-16)
+
+Verified successful PayMongo appointment-fee captures automatically issue one immutable e-receipt in the same transaction as payment settlement. System issuance has no staff issuer and records a SYSTEM receipt-issuance audit. Pending, failed, expired and returned payments cannot create a new e-receipt. Existing receipts are reused without rewriting their issuer or snapshots. Authorized customer access may idempotently issue a missing receipt for an already verified successful PayMongo capture from before this feature. The receipt states the actual fee paid, provider payment reference, customer, salon and booked schedule; scheduled service charges remain separate. Customers can preview and print/save the e-receipt after restoring their authorized appointment session. Manual and service-payment staff issuance rules remain unchanged.

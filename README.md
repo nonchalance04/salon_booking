@@ -411,18 +411,18 @@ customer or change the snapshotted appointment fee.
    PAYMENT_PROVIDER=paymongo
    PAYMONGO_SECRET_KEY=sk_test_YOUR_KEY
    PAYMONGO_WEBHOOK_SECRET=YOUR_WEBHOOK_SIGNING_SECRET
-   PAYMONGO_RETURN_URL=http://localhost:5173/appointment
+   PAYMONGO_RETURN_URL=http://localhost:5173/booking-confirmed
    ```
 
    The return URL must use a configured `TRUSTED_ORIGINS` frontend origin and the
-   exact `/appointment` path without query parameters or fragments. Development
+   `/booking-confirmed` path without query parameters or fragments (legacy `/appointment` is also accepted). Development
    permits local HTTP; production requires HTTPS and `sk_live_...`. Development
    rejects live keys, and production rejects test keys/providers.
 4. Restart the API and hold worker. Create a booking, choose **Pay with GCash**,
-   then **Continue to GCash on PayMongo**. Checkout opens a separate tab so the
-   private guest token remains only in the original page's memory. Returning from
-   PayMongo displays retrieval guidance; it never authorizes confirmation.
-5. Complete PayMongo's sandbox flow, return to the original booking tab, and check
+   then **Continue to GCash on PayMongo**. Checkout opens in the current tab.
+   The existing HttpOnly appointment session restores booking access on return;
+   the private guest token is never sent to PayMongo. Confirmation requires verified payment.
+5. Complete PayMongo's sandbox flow, return to the salon, and check
    payment status. Confirm the webhook receives HTTP 200, one capture is stored,
    and the booking confirms once. Repeat the callback, try cancellation/failure,
    and test success after the hold expires before enabling live payments.

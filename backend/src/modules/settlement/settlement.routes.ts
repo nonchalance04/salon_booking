@@ -10,7 +10,7 @@ export function createSettlementRouter(prisma: PrismaClient, config: AuthConfig)
   const router = Router(); const service = createSettlementService(prisma); const auth = createAuthMiddleware(prisma, config);
   router.use("/settlement", browserSecurity(config.TRUSTED_ORIGINS), auth.authenticate, (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   router.post("/settlement/lookup", validateRequest(z.object({ body: booking })), async (_req, res) => res.json({ appointment: await service.lookup(res.locals.user.id, res.locals.validated.body.bookingCode) }));
-  router.post("/settlement/outcomes", auth.adminOnly, validateRequest(z.object({ body: outcomesSchema })), async (_req, res) => res.json({ appointment: await service.outcomes(res.locals.user.id, res.locals.validated.body) }));
+  router.post("/settlement/outcomes", validateRequest(z.object({ body: outcomesSchema })), async (_req, res) => res.json({ appointment: await service.outcomes(res.locals.user.id, res.locals.validated.body) }));
   router.post("/settlement/pay", validateRequest(z.object({ body: settlementSchema })), async (_req, res) => res.json({ appointment: await service.settle(res.locals.user.id, res.locals.validated.body) }));
   router.post("/settlement/close", auth.adminOnly, validateRequest(z.object({ body: revision.strict() })), async (_req, res) => res.json({ appointment: await service.close(res.locals.user.id, res.locals.validated.body) }));
   return router;

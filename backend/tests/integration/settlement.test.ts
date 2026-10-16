@@ -137,15 +137,13 @@ test("service settlement generates receipt references automatically for all meth
 test("outcome recording, corrections, stale review, full amount and role boundaries", async () => {
   const f = await fixture(); const row = await settlement.lookup(cashierId, f.booking.bookingCode);
   const input = { bookingCode: row.bookingCode, revision: row.revision, services: row.services.map(s => ({ id: s.id, outcome: "PERFORMED" as const })) };
-  await assert.rejects(settlement.outcomes(cashierId, input), (e: ApiError) => e.status === 403);
   await assert.rejects(settlement.settle(cashierId, pay(row)), (e: ApiError) => e.code === "OUTCOMES_REQUIRED");
   const saved = await settlement.outcomes(adminId, input);
   await assert.rejects(settlement.settle(adminId, pay(saved)), (e: ApiError) => e.status === 403);
   await assert.rejects(settlement.settle(cashierId, { ...pay(saved), amount: "100.00" }), (e: ApiError) => e.code === "AMOUNT_MISMATCH");
   await assert.rejects(settlement.close(adminId, { bookingCode: saved.bookingCode, revision: saved.revision }));
   const change = { ...input, revision: saved.revision, services: input.services.map(s => ({ ...s, outcome: "NOT_PERFORMED" as const })) };
-  await assert.rejects(settlement.outcomes(cashierId, change), (e: ApiError) => e.status === 403);
-  const corrected = await settlement.outcomes(adminId, change);
+  const corrected = await settlement.outcomes(cashierId, change);
   await assert.rejects(settlement.settle(cashierId, pay(saved)), (e: ApiError) => e.code === "STALE_SETTLEMENT");
   await assert.rejects(settlement.close(cashierId, { bookingCode: corrected.bookingCode, revision: corrected.revision }), (e: ApiError) => e.status === 403);
   assert.equal((await settlement.close(adminId, { bookingCode: corrected.bookingCode, revision: corrected.revision })).status, "COMPLETED");
@@ -221,15 +219,18 @@ test("HTTP authentication, CSRF, role enforcement, and deactivated accounts prot
     assert.equal((await request("pay", pay(f.saved), adminToken)).status, 403);
     assert.equal((await request("lookup", { bookingCode: f.saved.bookingCode }, cashierToken)).status, 200);
     assert.equal((await request("pay", { ...pay(f.saved), amount: 120 }, cashierToken)).status, 400);
-    const outcomeInput = { bookingCode: f.saved.bookingCode, revision: f.saved.revision, services: f.saved.services.map(s => ({ id: s.id, outcome: "PERFORMED" })) };
-    assert.equal((await request("outcomes", outcomeInput, cashierToken)).status, 403);
+    const outcomeInput = { bookingCode: f.saved.bookingCode, revision: f.saved.revision, services: f.saved.services.map(s => ({ id: s.id, outcome: "PERFORMED" as const })) };
+    assert.equal((await request("outcomes", outcomeInput, cashierToken, "https://evil.test")).status, 403);
+    assert.equal((await request("outcomes", { ...outcomeInput, actorUserId: adminId }, cashierToken)).status, 400);
     assert.equal((await request("close", { bookingCode: f.saved.bookingCode, revision: f.saved.revision }, cashierToken)).status, 403);
-    assert.equal((await request("outcomes", outcomeInput, adminToken)).status, 200);
+    assert.equal((await request("outcomes", outcomeInput, cashierToken)).status, 200);
     const current = await settlement.lookup(cashierId, f.saved.bookingCode);
     assert.equal((await request("pay", pay(current), cashierToken)).status, 200);
     await prisma.user.update({ where: { id: cashierId }, data: { isActive: false } });
     assert.equal((await request("lookup", { bookingCode: f.saved.bookingCode }, cashierToken)).status, 401);
     await assert.rejects(settlement.settle(cashierId, pay(f.saved)), (e: ApiError) => e.status === 401);
+    assert.equal((await request("outcomes", outcomeInput, cashierToken)).status, 401);
+    await assert.rejects(settlement.outcomes(cashierId, outcomeInput), (e: ApiError) => e.status === 401);
   } finally { await prisma.user.update({ where: { id: cashierId }, data: { isActive: true } }); server.close(); await once(server, "close"); }
 });
 
@@ -260,4 +261,23 @@ test("no-service outbox failure rolls back closure and leaves outcomes editable 
   assert.equal((await prisma.appointmentService.findFirstOrThrow({ where: { appointmentId: f.booking.id } })).outcomeFinalizedAt, null);
   const row = await settlement.lookup(adminId, f.saved.bookingCode);
   await settlement.outcomes(adminId, { bookingCode: row.bookingCode, revision: row.revision, services: row.services.map(s => ({ id: s.id, outcome: "PERFORMED" })) });
+});
+
+
+test("Cashier records and corrects outcomes with audit attribution and cannot edit finalized services", async () => {
+  const f = await fixture();
+  const initial = await settlement.lookup(cashierId, f.booking.bookingCode);
+  const input = { bookingCode: initial.bookingCode, revision: initial.revision, services: initial.services.map(s => ({ id: s.id, outcome: "NOT_PERFORMED" as const })) };
+  const saved = await settlement.outcomes(cashierId, input);
+  assert.equal(saved.services[0]!.outcome, "NOT_PERFORMED");
+  const corrected = await settlement.outcomes(cashierId, { ...input, revision: saved.revision, services: input.services.map(s => ({ ...s, outcome: "PERFORMED" as const })) });
+  assert.equal(corrected.services[0]!.outcome, "PERFORMED");
+  assert.equal("commissions" in corrected, false);
+  const audits = await prisma.auditLog.findMany({ where: { entityId: f.booking.id, action: "SERVICE_OUTCOMES_RECORDED" } });
+  assert.equal(audits.length, 2);
+  assert.ok(audits.every(a => a.actorType === "CASHIER" && a.actorUserId === cashierId));
+  await assert.rejects(settlement.outcomes(cashierId, input), { code: "STALE_SETTLEMENT" });
+  await settlement.settle(cashierId, pay(corrected));
+  const completed = await settlement.lookup(cashierId, corrected.bookingCode);
+  await assert.rejects(settlement.outcomes(cashierId, { ...input, revision: completed.revision }));
 });

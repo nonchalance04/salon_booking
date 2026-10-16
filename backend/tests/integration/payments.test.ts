@@ -282,6 +282,11 @@ test("HTTP endpoints enforce guest access, CSRF, staff/admin permissions, and ra
     const response = await post("/payments/checkout", { bookingCode: f.row.bookingCode, token: f.guestToken, idempotencyKey: randomUUID() });
     assert.equal(response.status, 200); assert.equal(response.headers.get("cache-control"), "no-store");
     const { payment } = await response.json(); const event = await eventFor(payment.id);
+    const receiptInput = { bookingCode: f.row.bookingCode, token: f.guestToken, paymentId: payment.id };
+    assert.equal((await post("/payments/customer-receipt", { ...receiptInput, token: "x".repeat(43) })).status, 404);
+    assert.equal((await post("/payments/customer-receipt", receiptInput, undefined, "https://evil.test")).status, 403);
+    assert.equal((await post("/payments/customer-receipt", { ...receiptInput, amount: "100.00" })).status, 400);
+    assert.equal((await post("/payments/customer-receipt", receiptInput)).status, 409);
     assert.equal((await post("/payments/provider/events", JSON.parse(event.raw.toString()), undefined, null)).status, 401);
     const accepted = await fetch(`${base}/payments/provider/events`, { method: "POST", headers: { "Content-Type": "application/json", "x-payment-signature": event.signature }, body: event.raw.toString() });
     assert.equal(accepted.status, 200); assert.equal((await accepted.json()).received, true);
@@ -402,10 +407,57 @@ test("PayMongo checkout is claimed once across processes/keys; capture identity 
   assert.equal((await gateway.service.refresh(f.row.bookingCode, f.guestToken, first.payment.id)).status, "PENDING");
   const results = await Promise.all([gateway.capture(gateway.reference), gateway.capture(gateway.reference)]);
   assert.equal(results[0]!.appointment.status, "CONFIRMED");
+  assert.ok(results[0]!.receipt);
+  assert.equal(results[0]!.receipt!.receiptNumber, results[1]!.receipt!.receiptNumber);
+  const receipt = await prisma.receipt.findUniqueOrThrow({ where: { paymentId: first.payment.id } });
+  assert.equal(receipt.issuedByUserId, null);
+  assert.equal((receipt.receiptSnapshot as { issuedBy: string }).issuedBy, "SYSTEM");
+  assert.equal((receipt.receiptSnapshot as { amount: string }).amount, first.payment.amount);
+  assert.equal(await prisma.receipt.count({ where: { paymentId: first.payment.id } }), 1);
+  assert.equal(await prisma.auditLog.count({ where: { entityId: receipt.id, action: "RECEIPT_ISSUED" } }), 1);
+  assert.equal((await bookings.retrieve(f.row.bookingCode, f.guestToken)).appointment.payments[0]!.receipt!.receiptNumber, receipt.receiptNumber);
+  const customerReceipt = await gateway.service.customerReceipt(f.row.bookingCode, f.guestToken, first.payment.id);
+  assert.equal(customerReceipt.receipt!.receiptNumber, receipt.receiptNumber);
+  assert.equal((await gateway.service.issueReceipt(adminId, first.payment.id)).receipt!.receiptNumber, receipt.receiptNumber);
   const persisted = await prisma.payment.findUniqueOrThrow({ where: { id: first.payment.id } });
   assert.equal(persisted.externalReference, `pay_${gateway.reference.slice(3)}`); assert.equal(persisted.method, "GCASH");
   assert.equal(await prisma.notificationQueue.count({ where: { appointmentId: f.row.id } }), 2);
   await assert.rejects(gateway.service.refresh(f.row.bookingCode, "x".repeat(43), first.payment.id));
+});
+test("customer receipt generation requires appointment access and an already verified PayMongo capture", async () => {
+  const f = await heldBooking(); const gateway = paymongoFixture();
+  const checkout = await gateway.service.checkout(f.row.bookingCode, f.guestToken, randomUUID());
+  await assert.rejects(gateway.service.customerReceipt(f.row.bookingCode, f.guestToken, checkout.payment.id), { code: "RECEIPT_UNAVAILABLE" });
+  await assert.rejects(gateway.service.customerReceipt(f.row.bookingCode, "x".repeat(43), checkout.payment.id), { code: "APPOINTMENT_NOT_FOUND" });
+  const other = await heldBooking();
+  await assert.rejects(gateway.service.customerReceipt(other.row.bookingCode, other.guestToken, checkout.payment.id), { code: "NOT_FOUND" });
+  assert.equal(await prisma.receipt.count({ where: { paymentId: checkout.payment.id } }), 0);
+  // A verified capture from before automatic issuance can receive its first receipt.
+  const legacy = await prisma.payment.create({ data: { appointmentId: f.row.id, idempotencyKey: randomUUID(), type: "APPOINTMENT_FEE", provider: "paymongo", method: "GCASH", status: "SUCCEEDED", amount: f.row.appointmentFeeAmount, currency: "PHP", paidAt: new Date(), externalReference: `pay_legacy_${randomUUID()}` } });
+  const [first, second] = await Promise.all([gateway.service.customerReceipt(f.row.bookingCode, f.guestToken, legacy.id), gateway.service.customerReceipt(f.row.bookingCode, f.guestToken, legacy.id)]);
+  assert.equal(first.receipt!.receiptNumber, second.receipt!.receiptNumber);
+  assert.equal(await prisma.receipt.count({ where: { paymentId: legacy.id } }), 1);
+  const snapshot = (await prisma.receipt.findUniqueOrThrow({ where: { paymentId: legacy.id } })).receiptSnapshot;
+  await prisma.customer.update({ where: { id: f.row.customerId }, data: { firstName: "Changed after receipt" } });
+  assert.deepEqual((await gateway.service.customerReceipt(f.row.bookingCode, f.guestToken, legacy.id)).receipt!.receiptSnapshot, snapshot);
+});
+test("automatic PayMongo receipt failure rolls back capture and confirmation, then retries issue once", async () => {
+  const f = await heldBooking(); const gateway = paymongoFixture();
+  const checkout = await gateway.service.checkout(f.row.bookingCode, f.guestToken, randomUUID());
+  await observer.query(`CREATE FUNCTION reject_auto_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."paymentId" = '${checkout.payment.id}'::uuid THEN RAISE EXCEPTION 'fixture receipt failure'; END IF; RETURN NEW; END $$`);
+  await observer.query('CREATE TRIGGER reject_auto_receipt BEFORE INSERT ON "Receipt" FOR EACH ROW EXECUTE FUNCTION reject_auto_receipt()');
+  try {
+    await assert.rejects(gateway.capture(gateway.reference));
+    assert.equal((await prisma.payment.findUniqueOrThrow({ where: { id: checkout.payment.id } })).status, "PENDING");
+    assert.equal((await prisma.appointment.findUniqueOrThrow({ where: { id: f.row.id } })).status, "PENDING_PAYMENT");
+    assert.equal(await prisma.receipt.count({ where: { paymentId: checkout.payment.id } }), 0);
+    assert.equal(await prisma.notificationQueue.count({ where: { appointmentId: f.row.id } }), 0);
+  } finally {
+    await observer.query('DROP TRIGGER reject_auto_receipt ON "Receipt"');
+    await observer.query('DROP FUNCTION reject_auto_receipt()');
+  }
+  assert.ok((await gateway.capture(gateway.reference))!.receipt);
+  assert.equal(await prisma.receipt.count({ where: { paymentId: checkout.payment.id } }), 1);
 });
 test("lost PayMongo create response is not retried blindly; signed callback recovers session and records payment", async () => {
   const f = await heldBooking(); const gateway = paymongoFixture(); gateway.loseResponse();

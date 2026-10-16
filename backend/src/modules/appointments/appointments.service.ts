@@ -40,7 +40,7 @@ export const guestSelect = {
   bookingPolicyVersion: { select: { maxReschedules: true, rescheduleCutoffHours: true, cancellationCutoffHours: true, noShowGraceHours: true } },
   checkedInAt: true, confirmedAt: true,
   payments: { where: { type: "APPOINTMENT_FEE" }, orderBy: { createdAt: "asc" }, select: {
-    id: true, status: true, amount: true, currency: true, satisfiesObligation: true, reconciliationStatus: true,
+    id: true, status: true, amount: true, currency: true, method: true, provider: true, satisfiesObligation: true, reconciliationStatus: true,
     receipt: { select: { receiptNumber: true, issuedAt: true, receiptSnapshot: true } },
   } },
   bookingCode: true, status: true, startAt: true, endAt: true, appointmentFeeAmount: true, holdExpiresAt: true,

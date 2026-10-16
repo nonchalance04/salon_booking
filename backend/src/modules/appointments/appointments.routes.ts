@@ -38,7 +38,7 @@ export function createAppointmentsRouter(prisma: PrismaClient, config: AuthConfi
   router.get("/appointments", auth.authenticate, auth.adminOnly, validateRequest(z.object({ query: appointmentListQuery })), async (_req, res) => {
     res.json(await changes.list(res.locals.user.id, res.locals.validated.query.cursor, res.locals.validated.query));
   });
-  router.post("/appointments/no-show/correct", auth.authenticate, auth.adminOnly, validateRequest(z.object({ body: noShowCorrectionSchema })), async (_req, res) => {
+  router.post("/appointments/no-show/correct", auth.authenticate, validateRequest(z.object({ body: noShowCorrectionSchema })), async (_req, res) => {
     res.json(await changes.correctNoShow(res.locals.user.id, res.locals.validated.body));
   });
   router.post("/appointments/check-in", auth.authenticate, validateRequest(z.object({ body: z.object({ bookingCode: z.string().trim().min(1).max(100) }).strict() })), async (_req, res) => {

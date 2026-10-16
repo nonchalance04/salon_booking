@@ -265,7 +265,8 @@ const adminNav: { page: Page; label: string; icon: IconName }[] = [
   { page: "overview", label: "Appointments", icon: "calendar" },
 ];
 const cashierNav: typeof adminNav = [
-  { page: "dashboard", label: "Check-in & payments", icon: "receipt" },
+  { page: "dashboard", label: "Services", icon: "data" },
+  { page: "payments", label: "Payments", icon: "receipt" },
 ];
 const headings: Partial<Record<Page, [string, string]>> = {
   master: ["Salon Management", "Core configurations and salon data"],
@@ -296,6 +297,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
   const [appointmentFilters, setAppointmentFilters] =
     useState<AppointmentFilters>({});
   const [bookingCode, setBookingCode] = useState<string | undefined>();
+  const [cashierNavigation, setCashierNavigation] = useState({ busy: false, dirty: false });
   const [kind, setKind] = useState("appointments");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -317,10 +319,18 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
   // A refreshed session can change role without unmounting the workspace.
   useEffect(() => {
     setPage("dashboard");
+    setBookingCode(undefined);
+    setCashierNavigation({ busy: false, dirty: false });
     setOpen(false);
     setSearch("");
   }, [user?.role]);
-  function navigate(next: Page) {
+  function navigate(next: Page, code?: string) {
+    if (!admin) {
+      if (cashierNavigation.busy) return;
+      if (cashierNavigation.dirty && !window.confirm("Discard unsaved changes and leave this view?")) return;
+      setCashierNavigation({ busy: false, dirty: false });
+      setBookingCode(code);
+    }
     setPage(next);
     setSearch("");
     setOpen(false);
@@ -368,7 +378,9 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
             : null
     : null;
   const heading = !admin
-    ? ["Check-in & payments", "Record customer arrival, collect service payments and issue receipts"]
+    ? page === "payments"
+      ? ["Payments", "Collect service payments and review receipts"]
+      : ["Services", "Manage arrivals, service outcomes and no-show corrections"]
     : (headings[page] ?? [
         "CLIQUE SALON AND SPA",
         "Where everything you need meets you at the best time.",
@@ -415,6 +427,7 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
             <button
               key={item.page}
               aria-current={active === item.page ? "page" : undefined}
+              disabled={!admin && cashierNavigation.busy}
               onClick={() => navigate(item.page)}
             >
               <Icon name={item.icon} />
@@ -561,19 +574,14 @@ export function WorkspaceLayout({ accounts }: { accounts: ReactNode }) {
               {page === "dashboard" && admin ? (
                 <AdminDashboard
                   onSettlement={(code) => openBooking("settlement", code)}
-                  onAppointments={openAppointments}
-                  onPayments={() => openBooking("payments")}
-                  onReport={(next) => {
-                    setKind(next);
-                    navigate("report-detail");
-                  }}
-                  onConfiguration={(next) => {
-                    setSection(next);
-                    navigate("configuration");
-                  }}
                 />
               ) : !admin ? (
-                <CashierDashboard />
+                <CashierDashboard
+                  mode={page === "payments" ? "payments" : "services"}
+                  bookingCode={bookingCode}
+                  onNavigate={(view, code) => navigate(view === "payments" ? "payments" : "dashboard", code)}
+                  onNavigationStateChange={setCashierNavigation}
+                />
               ) : page === "configuration" && admin ? (
                 <Configuration
                   key={section}

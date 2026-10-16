@@ -4,7 +4,7 @@ import { api } from "./api";
 import { startPaymentSync } from "./payment-sync";
 import { paymentStatusLabel } from "./payment-presentation";
 const message = (error: unknown) => error instanceof Error ? error.message : "Please try again.";
-export type FeePayment = { id: string; amount: string; status: string; reconciliationStatus: string; receipt: { receiptNumber: string; receiptSnapshot?: Record<string, unknown> } | null };
+export type FeePayment = { id: string; amount: string; status: string; method?: string; provider?: string; satisfiesObligation?: boolean; reconciliationStatus: string; receipt: { receiptNumber: string; receiptSnapshot?: Record<string, unknown> } | null };
 export function FeePaymentControls({ bookingCode, token, onChange, pending }: { bookingCode: string; token: string; onChange: () => Promise<void>; pending?: FeePayment }) {
   const [options, setOptions] = useState<{ onlineAvailable: boolean; testMode: boolean; sandbox: boolean } | null>(null);
   const [payment, setPayment] = useState<FeePayment | null>(pending ?? null);
@@ -57,9 +57,9 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
       {options.testMode && <p role="note"><strong>Development payment simulator — no real money is collected.</strong></p>}
       {(!payment || !options.testMode) && !checkoutUrl ? <button type="button" className="primary" disabled={busy} onClick={() => void checkout()}>{busy ? "Opening payment…" : options.testMode ? "Open test payment" : "Pay with GCash"}</button> : options.testMode && <div className="actions"><button type="button" disabled={busy} onClick={() => void simulate("SUCCEEDED")}>Simulate successful payment</button><button type="button" disabled={busy} onClick={() => void simulate("FAILED")}>Simulate failed payment</button></div>}
       {options.sandbox && <p role="note">PayMongo sandbox — no real money is collected.</p>}
-      {checkoutUrl && <p><a className="payment-link" href={checkoutUrl} target="_blank" rel="noopener noreferrer">Continue to GCash on PayMongo ↗</a></p>}
-      {!options.testMode && <p>Keep this booking page open while paying in the new tab. Your appointment will confirm automatically after your payment is verified.</p>}
-      {!options.testMode && payment?.status === "PENDING" && <p role="status">Waiting for payment confirmation… Status updates automatically when you return to this booking tab.</p>}
+      {checkoutUrl && <p><a className="payment-link" href={checkoutUrl} rel="noreferrer">Continue to GCash on PayMongo →</a></p>}
+      {!options.testMode && <p>Complete payment in this tab. When PayMongo returns you to the salon, your booking restores automatically on this browser and confirms after payment is verified.</p>}
+      {!options.testMode && payment?.status === "PENDING" && <p role="status">Waiting for payment confirmation… Status updates automatically when you return to the salon.</p>}
       {!options.testMode && payment && <button type="button" disabled={busy} onClick={() => void checkPayment()}>Check payment status</button>}
     </> : options && <p>Contact the salon to pay the appointment fee before your hold expires. Online payment is not configured.</p>}
     {error && <p role="alert" className="error">{error}</p>}

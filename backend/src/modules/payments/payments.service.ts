@@ -8,7 +8,9 @@ import {
 import { ApiError } from "../../shared/http.js";
 import { lockSalon, lockStaff, freshTime } from "../scheduling/coordination.js";
 import { coversReservation } from "../scheduling/coverage.js";
-import { validGuestAccess } from "../appointments/appointments.security.js";
+import { createGuestCredentials, validGuestAccess } from "../appointments/appointments.security.js";
+import { GUEST_SESSION_MS } from "../appointments/appointment-otp.service.js";
+import { historicalStaff } from "../appointments/staff-history.js";
 import type { PaymentProvider, VerifiedPayment } from "./payment-provider.js";
 import { TestPaymentProvider } from "./payment-provider.js";
 import {
@@ -136,7 +138,7 @@ async function view(tx: Tx, id: string) {
   });
   return { ...payment, amount: payment.amount.toFixed(2) };
 }
-async function issueReceipt(tx: Tx, payment: Payment, actorId: string) {
+async function issueReceipt(tx: Tx, payment: Payment, actorId: string | null, timeZone = "Asia/Manila") {
   const existing = await tx.receipt.findUnique({
     where: { paymentId: payment.id },
   });
@@ -149,7 +151,7 @@ async function issueReceipt(tx: Tx, payment: Payment, actorId: string) {
     );
   const appointment = await tx.appointment.findUniqueOrThrow({
     where: { id: payment.appointmentId },
-    include: { customer: true },
+    include: { customer: true, appointmentServices: { where: { membershipStatus: "ACTIVE" }, orderBy: { sequenceNo: "asc" } } },
   });
   const salon = await tx.salonProfile.findFirst();
   return tx.receipt.create({
@@ -158,7 +160,8 @@ async function issueReceipt(tx: Tx, payment: Payment, actorId: string) {
       receiptNumber: `R-${randomUUID()}`,
       issuedByUserId: actorId,
       receiptSnapshot: {
-        schemaVersion: 1,
+        schemaVersion: 2,
+        issuedBy: actorId ? "STAFF" : "SYSTEM",
         paymentId: payment.id,
         bookingCode: appointment.bookingCode,
         type: payment.type,
@@ -169,12 +172,29 @@ async function issueReceipt(tx: Tx, payment: Payment, actorId: string) {
         externalReference: payment.externalReference,
         paidAt: payment.paidAt!.toISOString(),
         customerName: `${appointment.customer.firstName} ${appointment.customer.lastName}`,
+        timeZone,
+        appointment: { startAt: appointment.startAt.toISOString(), endAt: appointment.endAt.toISOString() },
+        scheduledServices: appointment.appointmentServices.map(service => {
+          const staff = historicalStaff(service);
+          return { name: service.serviceNameSnapshot, staffName: `${staff.firstName} ${staff.lastName}`.trim(),
+            startAt: service.scheduledStartAt.toISOString(), endAt: service.scheduledEndAt.toISOString() };
+        }),
         salon: salon
-          ? { name: salon.name, address: salon.address, phone: salon.phone }
+          ? { name: salon.name, address: salon.address, phone: salon.phone, email: salon.email }
           : null,
       },
     },
   });
+}
+async function issueAutomaticReceipt(tx: Tx, payment: Payment, timeZone: string) {
+  if (payment.provider !== "paymongo" || payment.status !== "SUCCEEDED" || payment.type !== "APPOINTMENT_FEE")
+    throw new ApiError(409, "RECEIPT_UNAVAILABLE", "An e-receipt requires a verified successful PayMongo appointment-fee payment.");
+  const existing = await tx.receipt.findUnique({ where: { paymentId: payment.id } });
+  if (existing) return existing;
+  const receipt = await issueReceipt(tx, payment, null, timeZone);
+  await tx.auditLog.create({ data: { actorType: "SYSTEM", action: "RECEIPT_ISSUED", entityType: "Receipt", entityId: receipt.id,
+    afterData: { paymentId: payment.id, issuance: "VERIFIED_PROVIDER_PAYMENT" } } });
+  return receipt;
 }
 async function reservationsOwned(
   tx: Tx,
@@ -365,7 +385,8 @@ async function settle(
     },
   });
   if (event.status === "SUCCEEDED") {
-    if (actorId) await issueReceipt(tx, updated, actorId);
+    if (updated.provider === "paymongo") await issueAutomaticReceipt(tx, updated, timeZone);
+    else if (actorId) await issueReceipt(tx, updated, actorId, timeZone);
     const eventTypes = confirm
       ? (["PAYMENT_RECEIVED", "BOOKING_CONFIRMED"] as const)
       : (["PAYMENT_RECEIVED"] as const);
@@ -480,6 +501,17 @@ export function createPaymentsService(
             amount: p.amount.toFixed(2),
           })),
         };
+      });
+    },
+    async returnSession(bookingCode: string, token: string) {
+      return transaction(prisma, async tx => {
+        const appointment = await guest(tx, bookingCode, token);
+        const session = createGuestCredentials();
+        await tx.appointmentGuestSession.create({ data: {
+          appointmentId: appointment.id, tokenHash: session.hash,
+          expiresAt: new Date(Date.now() + GUEST_SESSION_MS),
+        } });
+        return session.token;
       });
     },
     async checkout(bookingCode: string, token: string, key: string) {
@@ -843,6 +875,16 @@ export function createPaymentsService(
         );
       });
     },
+    async customerReceipt(bookingCode: string, token: string, paymentId: string) {
+      return transaction(prisma, async tx => {
+        const appointment = await guest(tx, bookingCode, token);
+        await lockAppointment(tx, appointment.id);
+        const payment = await lockPayment(tx, paymentId);
+        if (payment.appointmentId !== appointment.id) throw new ApiError(404, "NOT_FOUND", "Payment not found.");
+        await issueAutomaticReceipt(tx, payment, timeZone);
+        return view(tx, paymentId);
+      });
+    },
     async issueReceipt(actorId: string, paymentId: string) {
       return transaction(prisma, async (tx) => {
         const payment = await lockPayment(tx, paymentId);
@@ -855,7 +897,7 @@ export function createPaymentsService(
           );
         const existing = await tx.receipt.findUnique({ where: { paymentId } });
         if (!existing) {
-          const receipt = await issueReceipt(tx, payment, actorId);
+          const receipt = await issueReceipt(tx, payment, actorId, timeZone);
           await tx.auditLog.create({
             data: {
               actorType: actor.role,

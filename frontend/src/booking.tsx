@@ -5,6 +5,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { AppointmentManagement } from "./appointment-management";
 import { FeePaymentControls, FeePaymentHistory, type FeePayment } from "./payments";
+import { BookingConfirmation } from "./booking-confirmation";
+import type { Salon } from "./public-site";
 export type BookingPlan = { date: string; startAt: string; services: ({ serviceId: string; assignmentMode: "ANY_AVAILABLE" } | { serviceId: string; assignmentMode: "SPECIFIC"; staffId: string })[] };
 export type Appointment = {
   checkedInAt: string | null; checkedInByUser?: { firstName: string; lastName: string } | null;
@@ -50,11 +52,12 @@ export function BookingForm({ plan, onBusy, onBooked }: { plan: BookingPlan; onB
     <button className="primary" disabled={busy}>{busy ? "Reserving your visit…" : "Reserve a temporary hold"}</button>
   </form>;
 }
-export function AppointmentView({ initial, token: initialToken }: { initial: Appointment; token: string }) {
+export function AppointmentView({ initial, token: initialToken, salon = null }: { initial: Appointment; token: string; salon?: Salon | null }) {
   const [appointment, setAppointment] = useState(initial);
   const [token, setToken] = useState(initialToken);
   const [error, setError] = useState("");
   const [remaining, setRemaining] = useState(0);
+  const [managing, setManaging] = useState(false);
   // Monotonic elapsed time avoids relying on the customer's wall clock.
   const clock = useRef({ received: performance.now(), server: Date.parse(initial.serverTime) });
   const refreshBusy = useRef(false);
@@ -83,6 +86,7 @@ export function AppointmentView({ initial, token: initialToken }: { initial: App
   const time = (value: string) => new Intl.DateTimeFormat("en-PH", { timeZone: appointment.timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(value));
   const money = (value: string | number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(value));
   const serviceTotal = appointment.appointmentServices.reduce((sum, service) => sum + Math.round(Number(service.priceSnapshot) * 100), 0) / 100;
+  if (appointment.status === "CONFIRMED" && !managing) return <BookingConfirmation key={appointment.bookingCode} appointment={appointment} salon={salon} token={token} onManage={() => setManaging(true)} />;
   return <section className="visit-summary reservation" aria-label="Your booking">
     <header className="reservation-header">
       <div><p className="booking-kicker">BOOKING REFERENCE</p><h2>{appointment.bookingCode}</h2><p className="muted">Booked for {appointment.customer.firstName} {appointment.customer.lastName}</p></div>
@@ -124,7 +128,7 @@ function readGuestCredentials() {
     if (params.has("code") || params.has("token")) window.history.replaceState(null, "", "/appointment");
     return { bookingCode: params.get("code") ?? "", token: params.get("token") ?? "" };
 }
-export function GuestAppointment({ embedded = false }: { embedded?: boolean } = {}) {
+export function GuestAppointment({ embedded = false, salon = null }: { embedded?: boolean; salon?: Salon | null } = {}) {
   const [credentials, setCredentials] = useState(readGuestCredentials);
   const [result, setResult] = useState<Appointment | null>(null);
   const [token, setToken] = useState(credentials.token);
@@ -158,13 +162,13 @@ export function GuestAppointment({ embedded = false }: { embedded?: boolean } = 
   }, []);
   useEffect(() => { if (credentials.token) void retrieve(credentials.bookingCode, credentials.token); }, [credentials]);
   return <div className={embedded ? "guest-appointment container page-section" : "workspace"}>{!embedded && <header><a className="wordmark" href="/availability">CLIQUE<span>SALON</span></a><a href="/availability">Find a salon time</a><a href="/help">Salon help</a></header>}
-    <section className={embedded ? `manage-panel${result ? " reservation-page" : ""}` : "workspace-main availability-page"}><p className="eyebrow">YOUR VISIT</p><h1 className="section-title">Your appointment</h1>
-      {result ? <><AppointmentView key={result.bookingCode} initial={result} token={token} />
-        {!token && <button type="button" onClick={() => { void api("/appointments/otp/logout", { method: "POST" }).then(() => { setResult(null); setCredentials({ bookingCode: "", token: "" }); }).catch(err => setError(message(err))); }}>Close appointment</button>}
+    <section className={embedded ? `manage-panel${result ? " reservation-page" : ""}` : "workspace-main availability-page"}>{!result && <><p className="eyebrow">YOUR VISIT</p><h1 className="section-title">Your appointment</h1></>}
+      {result ? <><AppointmentView key={result.bookingCode} initial={result} token={token} salon={salon} />
+        {!token && <button type="button" onClick={() => { void api("/appointments/otp/logout", { method: "POST" }).then(() => { window.location.assign("/"); }).catch(err => setError(message(err))); }}>Back to home</button>}
       </> : <>
         {(!credentials.token || Boolean(error)) && <AppointmentOtp onVerified={appointment => { requestGeneration.current++; setToken(""); setResult(appointment); setError(""); }} />}
         {busy && <p role="status">Loading your appointment…</p>}
-        <p className="muted">If you just returned from PayMongo, return to your original booking tab or verify your email or phone number above. Your payment will be verified automatically.</p>
+        <p className="muted">After PayMongo checkout, your appointment restores automatically on this browser. If your session has expired, verify your email or phone number above.</p>
       </>}{error && <p role="alert" className="error">{error}</p>}
     </section></div>;
 }

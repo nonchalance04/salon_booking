@@ -1,9 +1,12 @@
 # Cashier workflow
 
-Cashiers land on **Check-in & payments**, with two separate searchable, paginated
-lists that refresh every 30 seconds while visible and when returning to the tab.
+Cashiers have separate **Services** and **Payments** items in the sidebar. Services contains check-in, outcome management and no-show
+correction. Payments contains payment-ready visits, collection and receipts.
+Lists refresh every 30 seconds while visible and when returning to the browser
+tab. Switching sidebar views asks before discarding unsaved edits and is disabled during
+record updates.
 
-## Customer check-in
+## Services: customer check-in
 
 The **Customer check-in** list shows today's confirmed, uncompleted appointments
 with active services and no recorded/finalized active service outcomes. Dates use
@@ -17,24 +20,31 @@ puts them in the staff waiting queue for follow-up. The server records arrival
 time and the authenticated cashier in the audit history. Repeated check-ins keep
 the original arrival and actor. Arrival leaves the appointment CONFIRMED; it does
 not record service performance, completion, or payment. Other-date and NO_SHOW
-visits cannot use ordinary check-in; eligible no-show corrections remain Admin-only.
+visits cannot use ordinary check-in; eligible no-show corrections use the separate correction workflow below.
 
-## Service payments
+## Services: service outcomes
 
-**Ready for payment** shows confirmed, uncompleted visits across all dates only
-when all active outcomes are recorded and a positive performed-service charge is
-due. Admins record and correct service outcomes and close no-service visits.
+**Confirmed services** shows confirmed, uncompleted visits across all dates,
+including visits whose outcomes have not yet been recorded. Cashiers and Admins
+can record or correct outcomes before finalization. No-service closures remain
+Admin-only.
 
-1. Choose **Process payment** and review the customer, services and fee history.
-2. Review the itemized performed-service charge. Appointment fees remain separate
+1. Choose **Review services** and review the customer, services and fee history.
+   Record each service as performed or not performed and save outcomes. Existing
+   outcomes may be corrected until finalization; stale reviews must be refreshed.
+2. Choose **Continue to Payments** to open the same visit in the Payments view,
+   or choose a visit from its **Ready for payment** list. Payments also provides
+   booking-code lookup for receipts and **Open in Services** for corrections.
+   Review the itemized performed-service charge. Appointment fees remain separate
    and are never deducted from the service payment.
 3. Select the received payment method. Cash requires sufficient tendered money
    and calculates change in whole centavos. GCash prompts verification against
    the salon's received transaction. All methods generate a salon payment reference
    automatically and require confirmation that the money was received.
-4. Finalize, print the generated receipt, then choose **Finish & return to appointments**.
+4. Finalize, print the generated receipt, then choose **Finish & return to payments**.
    The lists refresh after settlement. Use the expandable booking-code lookup for
-   payment review and existing receipts; it cannot bypass settlement prerequisites.
+   payment review, service outcomes, no-show corrections and existing receipts; it
+   cannot bypass settlement prerequisites.
 
 The manual appointment-fee API keeps its existing fee recording and receipt workflow;
 the separate cashier fee menu remains removed.
@@ -46,6 +56,16 @@ Carried fee credits are not new collections. Cash tendered and change are a chec
 aid and are not persisted as separate financial transactions. Drawer opening floats,
 counted cash, cash withdrawals and saved shift-closing discrepancies remain future
 features.
+
+## Services: no-show correction
+
+Use the expandable booking-code lookup to open a NO_SHOW visit. Choose **Correct
+no-show / late arrival**, enter a reason, confirm the customer is physically
+present, and choose **Restore and check in**. The original visit must be today,
+not yet ended, without a replacement booking or service activity. Original staff
+availability and qualifications are checked under the existing locks. A successful
+correction restores CONFIRMED and records arrival and the correcting staff member
+in the audit history. It does not move the visit or change financial records.
 
 ## Validation
 
@@ -60,7 +80,7 @@ features.
 - Browser check: as a Cashier find a confirmed visit for today, confirm physical
   arrival, and verify the arrival time and recording staff appear. As an Admin,
   verify the visit appears in the waiting queue.
-- Payment browser check: as an Admin record outcomes for a confirmed booking, then as a Cashier verify insufficient
+- Payment browser check: as a Cashier record and correct outcomes for a confirmed booking, then verify insufficient
   cash disables finalization, verify PHP 1,000 tendered for PHP 780.30 produces
   PHP 219.70 change, finalize in a test environment, and check the receipt and
   refreshed queue/collection totals. An existing PHP 100 appointment fee must

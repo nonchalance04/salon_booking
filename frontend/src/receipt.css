@@ -37,6 +37,20 @@
 .salon-receipt .receipt-print:hover { background: #c8a124; }
 .salon-receipt .receipt-print:focus-visible { outline: 3px solid #987b1f; outline-offset: 3px; }
 .receipt-print-root { display: none; }
+.salon-receipt .receipt-paid { display:inline-block; margin-left:12px; padding:3px 10px; border:1px solid #d4dfd0; border-radius:99px; background:#edf2e9; color:#46613d; font-size:11px; font-weight:700; vertical-align:middle; }
+.salon-receipt .receipt-visit { padding:20px; margin:0 0 24px; border:1px solid #e6e1d4; background:#faf9f5; border-radius:14px; }
+.salon-receipt .receipt-visit-date { font-size:13px; margin:0 0 14px; }
+.salon-receipt .receipt-visit-service { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; font-size:12px; padding:8px 0; border-bottom:1px solid #e6e1d4; }
+.salon-receipt .receipt-visit-service span { color:#73756f; }
+.salon-receipt .receipt-fee-note { font-size:11px; color:#73756f; line-height:1.5; margin:14px 0 0; }
+.salon-receipt .receipt-footer small { display:block; }
+.receipt-preview-dialog { width:min(740px,calc(100% - 24px)); max-height:calc(100dvh - 32px); padding:20px; border:1px solid #ddddd7; border-radius:22px; background:#f3f3f1; color:#292a28; font-family:Arial,Helvetica,sans-serif; }
+.receipt-preview-dialog::backdrop { background:#292a28aa; }
+.receipt-preview-toolbar { display:flex; justify-content:space-between; align-items:center; gap:16px; font-size:14px; }
+.receipt-preview-toolbar button { padding:8px 12px; border:1px solid #ddddd7; border-radius:99px; background:#fff; color:#292a28; cursor:pointer; font:inherit; }
+.receipt-preview-dialog .salon-receipt { margin:20px auto 0; }
+.salon-receipt .receipt-save-hint { color:#73756f; text-align:center; font-size:11px; margin:12px 0 0; }
+@media(max-width:480px){.receipt-preview-dialog{padding:12px}.salon-receipt .receipt-visit{padding:16px}}
 @media (max-width: 480px) {
   .salon-receipt { padding: 22px 18px; border-radius: 16px; }
   .salon-receipt .receipt-header { align-items: flex-start; gap: 12px; }
@@ -56,4 +70,20 @@
   .receipt-print-root .receipt-payment, .receipt-print-root .receipt-footer, .receipt-print-root tr { break-inside: avoid; }
   .receipt-print-root thead { display: table-header-group; }
   .receipt-print-root .receipt-actions { display: none; }
+  .receipt-print-root .receipt-visit { break-inside:avoid; }
+  .receipt-print-root .salon-receipt { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .receipt-print-root .receipt-salon { margin:16px 0; }
+  .receipt-print-root .receipt-heading { padding-top:16px; }
+  .receipt-print-root .receipt-eyebrow { margin-bottom:8px; }
+  .receipt-print-root .receipt-heading > div h3 { font-size:24px; }
+  .receipt-print-root .receipt-heading h3 + p { margin:8px 0 16px; }
+  .receipt-print-root .receipt-details { gap:12px; padding:16px; margin-bottom:16px; }
+  .receipt-print-root .receipt-services { margin-bottom:16px; }
+  .receipt-print-root .receipt-services th,.receipt-print-root .receipt-services td { padding:8px; }
+  .receipt-print-root .receipt-total { padding:16px; }
+  .receipt-print-root .receipt-total strong { font-size:24px; }
+  .receipt-print-root .receipt-payment { grid-template-columns:minmax(0,.6fr) minmax(0,1.4fr); gap:16px; margin:16px 0; }
+  .receipt-print-root .receipt-visit { padding:16px; margin-bottom:16px; }
+  .receipt-print-root .receipt-footer { padding-top:16px; }
+  .receipt-preview-dialog::backdrop { background:transparent; }
 }

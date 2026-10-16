@@ -154,19 +154,20 @@ export function eligibleForAutomaticNoShow(row: {
 }
 
 /**
- * Authorizes that the acting user is an active administrator.
+ * Authorizes an active Admin, or an active Cashier when explicitly permitted.
  *
  * Uses a `FOR SHARE` row lock to guard against concurrent role or active-status downgrades.
  *
- * @throws {ApiError} 401 Unauthorized if inactive or not found, 403 Forbidden if not ADMIN.
+ * @throws {ApiError} 401 Unauthorized if inactive or not found, 403 Forbidden if the role is not permitted.
  */
-async function admin(tx: Tx, actorId: string) {
+async function admin(tx: Tx, actorId: string, allowCashier = false) {
   await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${actorId}::uuid FOR SHARE`;
   const user = await tx.user.findUnique({ where: { id: actorId } });
   if (!user?.isActive)
     throw new ApiError(401, "UNAUTHORIZED", "Please sign in again.");
-  if (user.role !== "ADMIN")
-    throw new ApiError(403, "FORBIDDEN", "Administrator access is required.");
+  if (user.role !== "ADMIN" && !(allowCashier && user.role === "CASHIER"))
+    throw new ApiError(403, "FORBIDDEN", allowCashier ? "Admin or Cashier access is required." : "Administrator access is required.");
+  return user;
 }
 
 /**
@@ -768,7 +769,7 @@ export function createAppointmentChangesService(
     async correctNoShow(actorId: string, raw: NoShowCorrectionInput) {
       const input = noShowCorrectionSchema.parse(raw);
       return reservationTransaction(prisma, async tx => {
-        await admin(tx, actorId);
+        const actor = await admin(tx, actorId, true);
         const { row } = await lockAppointment(tx, input.bookingCode);
         const now = await freshTime(tx);
         if (row.status !== "NO_SHOW" || row.recoveryAppointment || row.completionType)
@@ -803,7 +804,7 @@ export function createAppointmentChangesService(
           noShowAt: null, noShowGraceExpiresAt: null,
         } });
         await tx.auditLog.create({ data: {
-          actorType: "ADMIN", actorUserId: actorId, action: "BOOKING_NO_SHOW_CORRECTED", entityType: "Appointment", entityId: row.id,
+          actorType: actor.role, actorUserId: actorId, action: "BOOKING_NO_SHOW_CORRECTED", entityType: "Appointment", entityId: row.id,
           beforeData: { status: "NO_SHOW", noShowAt: row.noShowAt?.toISOString() ?? null,
             noShowGraceExpiresAt: row.noShowGraceExpiresAt?.toISOString() ?? null, checkedInAt: null },
           afterData: { status: "CONFIRMED", checkedInAt: checkedInAt.toISOString(), checkedInByUserId: actorId, reason: input.reason },

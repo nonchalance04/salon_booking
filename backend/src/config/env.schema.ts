@@ -94,9 +94,9 @@ export const envSchema = z.object({
     }
     if (value.PAYMONGO_RETURN_URL) {
       const url = new URL(value.PAYMONGO_RETURN_URL);
-      if (!value.TRUSTED_ORIGINS.includes(url.origin) || url.pathname !== "/appointment" || url.search || url.hash || url.username || url.password ||
+      if (!value.TRUSTED_ORIGINS.includes(url.origin) || !["/appointment", "/booking-confirmed"].includes(url.pathname) || url.search || url.hash || url.username || url.password ||
         (url.protocol !== "https:" && !(value.NODE_ENV !== "production" && ["localhost", "127.0.0.1"].includes(url.hostname)))) {
-        context.addIssue({ code: "custom", path: ["PAYMONGO_RETURN_URL"], message: "Use the trusted frontend appointment URL." });
+        context.addIssue({ code: "custom", path: ["PAYMONGO_RETURN_URL"], message: "Use the trusted frontend booking-confirmed or appointment URL." });
       }
     }
   }

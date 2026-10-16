@@ -129,11 +129,14 @@ export function createReportsService(prisma: PrismaClient, timeZone: string) {
             customer: { select: { firstName: true, lastName: true } },
             appointmentServices: { where: { membershipStatus: "ACTIVE" }, orderBy: { sequenceNo: "asc" }, select: {
               id: true, serviceNameSnapshot: true, priceSnapshot: true, outcome: true,
+              staffFirstNameSnapshot: true, staffLastNameSnapshot: true,
               staff: { select: { firstName: true, lastName: true } },
             } },
           } });
         return { timeZone, page: q.page, pageSize: q.pageSize, total,
-          rows: rows.map(row => ({ ...row, appointmentServices: row.appointmentServices.map(service => ({ ...service, priceSnapshot: service.priceSnapshot.toFixed(2) })) })) };
+          rows: rows.map(row => ({ ...row, appointmentServices: row.appointmentServices.map(({ staffFirstNameSnapshot, staffLastNameSnapshot, ...service }) => ({ ...service,
+            staff: service.staff ?? { firstName: staffFirstNameSnapshot || "Former staff", lastName: staffLastNameSnapshot },
+            priceSnapshot: service.priceSnapshot.toFixed(2) })) })) };
       });
     },
     cashierQueue(actorId: string, q: ReportQuery) {

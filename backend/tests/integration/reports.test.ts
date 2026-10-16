@@ -87,7 +87,7 @@ test("reports preserve service, receipt and commission snapshots after catalog c
   await prisma.service.update({ where: { id: service.id }, data: { name: "New name", price: "999.00", isActive: false } });
   for (const kind of ["appointments", "receipts", "commissions"] as const) {
     const result = await reports.list(admin.id, kind, q);
-    assert.match(JSON.stringify(result.rows), /Old service/); assert.doesNotMatch(JSON.stringify(result.rows), /New name|never-expose|999/);
+    assert.match(JSON.stringify(result.rows), /Old service/); assert.doesNotMatch(JSON.stringify(result.rows), /New name|never-expose|"999(?:\.00)?"/);
   }
   const dashboard = await reports.dashboard(admin.id, q);
   assert.equal(dashboard.finalizedCommissions, "20.00");
@@ -302,7 +302,8 @@ test("waiting queue includes only checked-in visits without active outcomes, old
   await prisma.appointmentService.update({ where: { id: newer.item.id }, data: { outcome: "NOT_PERFORMED" } });
   assert.equal((await reports.waitingQueue(cashier.id, q)).total, 1);
   await prisma.user.update({ where: { id: cashier.id }, data: { isActive: false } });
-  await assert.rejects(reports.waitingQueue(cashier.id, q));
+  try { await assert.rejects(reports.waitingQueue(cashier.id, q)); }
+  finally { await prisma.user.update({ where: { id: cashier.id }, data: { isActive: true } }); }
 });
 
 

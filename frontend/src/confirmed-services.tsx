@@ -28,11 +28,13 @@ export function ConfirmedServices({
   onSelect,
   disabled = false,
   arrivalOnly = false,
+  manageOutcomes = false,
 }: {
   admin: boolean;
   onSelect: (code: string) => void;
   disabled?: boolean;
   arrivalOnly?: boolean;
+  manageOutcomes?: boolean;
 }) {
   const heading = useId();
   const [data, setData] = useState<ConfirmedBookings | null>(null);
@@ -52,7 +54,7 @@ export function ConfirmedServices({
       search,
     });
     if (arrivalOnly) query.set("arrivalToday", "true");
-    else if (!admin) query.set("paymentReady", "true");
+    else if (!admin && !manageOutcomes) query.set("paymentReady", "true");
     void api<ConfirmedBookings>(`/reports/confirmed-services?${query}`, {
       signal: controller.signal,
     })
@@ -80,7 +82,7 @@ export function ConfirmedServices({
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [page, search, refresh, admin, arrivalOnly]);
+  }, [page, search, refresh, admin, arrivalOnly, manageOutcomes]);
   useEffect(() => {
     const update = () => {
       if (document.visibilityState === "visible")
@@ -112,14 +114,14 @@ export function ConfirmedServices({
           <h3 id={heading}>
             {arrivalOnly
               ? "Customer check-in"
-              : admin
+              : admin || manageOutcomes
                 ? "Confirmed services"
                 : "Ready for payment"}
           </h3>
           <p className="muted">
             {arrivalOnly
               ? "Confirm physical arrival for today’s appointments. Checked-in customers are protected from automatic no-show marking and appear in the waiting queue. Refreshes every 30 seconds."
-              : `Select a customer to ${admin ? "review their services" : "process their service payment"}. Includes all appointment dates and refreshes every 30 seconds.`}
+              : `Select a customer to ${admin || manageOutcomes ? "review their services" : "process their service payment"}. Includes all appointment dates and refreshes every 30 seconds.`}
           </p>
         </div>
         {/* <button
@@ -232,7 +234,7 @@ export function ConfirmedServices({
                             disabled={disabled || busy}
                             onClick={() => onSelect(row.bookingCode)}
                           >
-                            {admin ? "Review services" : "Process payment"}
+                            {admin || manageOutcomes ? "Review services" : "Process payment"}
                           </button>
                         )}
                       </td>
@@ -247,9 +249,9 @@ export function ConfirmedServices({
                 ? "No confirmed bookings match your search."
                 : arrivalOnly
                   ? "No confirmed visits awaiting service today."
-                  : admin
+                  : admin || manageOutcomes
                     ? "No confirmed services awaiting settlement."
-                    : "No visits ready for payment. An Admin must record all service outcomes first."}
+                    : "No visits ready for payment. Record all service outcomes before collection."}
             </p>
           )}
           <div className="actions cashier-pagination">

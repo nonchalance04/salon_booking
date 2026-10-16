@@ -144,7 +144,8 @@ changing scheduling/financial rules:
   authentication and exact integer centavos. No fee pass-through or business-rule
   changes. API calls use fixed official HTTPS endpoints, bounded timeouts, and
   redacted errors. Accept checkout navigation only on checkout.paymongo.com.
-- Keep the private guest page open and launch checkout through a separate-tab link.
+- Originally keep the private guest page open and launch checkout through a separate-tab link
+  (superseded by the same-tab checkout decision on 2026-10-16 below).
   Return to the configured trusted frontend /appointment URL without guest tokens.
   A return redirect never confirms payment. Token-authenticated status checks can
   retrieve merchant-side capture state through the same confirmation service.
@@ -461,3 +462,24 @@ Cashiers can acknowledge customers at the front desk without waiting for an Admi
 ## 2026-10-16 — Display only operational payment capabilities
 
 Remove unsupported payment-return terminology and metrics from the dashboard, collection tables, payment help, cancellation copy and guided chatbot responses. Keep collected-fee wording explicit: cancellation releases the reservation and leaves the collected fee unchanged. Retain existing database enum values, historical fields, provider validation and financial calculations for compatibility and data integrity. Historical returned-payment states use a readable display label; no transaction state is rewritten and no money movement feature is introduced.
+
+## 2026-10-16 — Restore bookings after hosted checkout
+
+At the user's request, show a booking confirmation layout after returning from PayMongo. Successful checkout creation establishes a two-hour appointment-scoped HttpOnly session using the existing guest-session model and validated private-token/session access. Only hashes are persisted; credentials never enter provider URLs or browser storage. The trusted `/appointment` return URL restores this session even when OTP delivery is disabled. Existing merchant verification and appointment status remain authoritative: returning from checkout does not confirm payment. Confirmed bookings show actual customer, service, staff, salon-local schedule and payment details, with separate service charges and appointment-fee amounts. Receipt download uses the existing issued receipt and browser Save as PDF; provider receipts still require authorized staff issuance. No schema or financial-rule changes.
+
+## 2026-10-16 — Open hosted checkout in the current tab
+
+At the user's request, Continue to GCash on PayMongo navigates the current tab. The existing HttpOnly appointment session restores access when PayMongo returns to `/appointment`. The checkout link retains a no-referrer policy; payment verification and confirmation rules are unchanged.
+
+## 2026-10-16 — Dedicated booking confirmation return URL
+
+At the user's request, PayMongo returns to `/booking-confirmed` on the trusted frontend origin. This route restores the existing appointment session and displays the confirmation layout only for a confirmed booking; pending or unsuccessful payments retain their actual state. The legacy `/appointment` return path remains accepted for existing configurations and checkout sessions.
+
+## 2026-10-16 — Automatically issue customer PayMongo e-receipts
+
+The user explicitly selected automatic issuance after verified PayMongo payment. This supersedes the staff-only provider receipt rule above. Receipt.issuedByUserId is nullable for system issuance, preserving staff-issued history. The existing payment transaction issues one immutable fee receipt and SYSTEM audit; paymentId uniqueness and payment locks make callbacks and customer recovery idempotent. The authorized customer-receipt endpoint can issue a missing receipt for legacy successful PayMongo payments only. Fee snapshots include salon contact, salon timezone, booked schedule and historical staff/service names, while stating that service charges are separate. The customer preview and print/PDF layout follows the website's gold, cream and charcoal styling. No fabricated staff identity or payment is created.
+
+
+## 2026-10-16 — Cashier outcome management and no-show correction
+
+At the user’s request, active Cashiers may record and correct service outcomes before finalization and restore eligible no-shows through the existing late-arrival correction workflow. This supersedes earlier Admin-only restrictions for those two operations. Enforce account activity in services and preserve revision checks, transaction locks, original-interval availability checks, physical-presence confirmation, reasons, and audit attribution to the actual actor role. Show confirmed visits with pending outcomes in the cashier desk and expose no-show correction through booking-code lookup. No-service closure, commission details, no-show marking and other Admin permissions remain unchanged. No database migration is required.

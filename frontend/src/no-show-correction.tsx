@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "./api";
 
-export function NoShowCorrection({ bookingCode, customerName, onCorrected, disabled }: {
+export function NoShowCorrection({ bookingCode, customerName, onCorrected, disabled, onNavigationStateChange }: {
   bookingCode: string; customerName: string; onCorrected: () => void; disabled: boolean;
+  onNavigationStateChange?: (state: { busy: boolean; dirty: boolean }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [present, setPresent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => { onNavigationStateChange?.({ busy, dirty: open && Boolean(reason.trim() || present) }); }, [busy, open, reason, present, onNavigationStateChange]);
   async function correct() {
     setBusy(true); setError("");
     try {

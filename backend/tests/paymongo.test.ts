@@ -3,7 +3,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { PayMongoProvider, centavos } from "../src/modules/payments/paymongo-provider.js";
 import { parseEnv } from "../src/config/env.schema.js";
-const config = { secretKey: "sk_test_dummy", webhookSecret: "whsk_test_secret_for_tests", returnUrl: "https://salon.test/appointment" };
+const config = { secretKey: "sk_test_dummy", webhookSecret: "whsk_test_secret_for_tests", returnUrl: "https://salon.test/booking-confirmed" };
 const paymentId = randomUUID(), appointmentId = randomUUID();
 function session(paid = false) { return { data: { id: "cs_test123", type: "checkout_session", attributes: {
   livemode: false, reference_number: paymentId, metadata: { paymentId, appointmentId }, status: paid ? "active" : "active",
@@ -79,6 +79,10 @@ test("PayMongo validates environment mode and trusted callback destination witho
   const base = { DATABASE_URL: "postgresql://test@localhost/test", JWT_SECRET: "x".repeat(32), PAYMENT_PROVIDER: "paymongo", PAYMONGO_SECRET_KEY: config.secretKey,
     PAYMONGO_WEBHOOK_SECRET: config.webhookSecret, PAYMONGO_RETURN_URL: config.returnUrl, TRUSTED_ORIGINS: "https://salon.test" };
   assert.equal(parseEnv(base).PAYMENT_PROVIDER, "paymongo");
+  assert.equal(parseEnv({ ...base, PAYMONGO_RETURN_URL: "https://salon.test/appointment" }).PAYMENT_PROVIDER, "paymongo");
+  for (const returnUrl of ["https://salon.test/booking-confirmed?token=secret", "https://salon.test/booking-confirmed#secret", "https://evil.test/booking-confirmed", "https://salon.test/other-page"]) {
+    assert.throws(() => parseEnv({ ...base, PAYMONGO_RETURN_URL: returnUrl }));
+  }
   for (const changes of [{ PAYMONGO_WEBHOOK_SECRET: "" }, { NODE_ENV: "production" }, { PAYMONGO_SECRET_KEY: "sk_live_dummy" }, { PAYMONGO_RETURN_URL: "https://evil.test/appointment" }, { PAYMONGO_RETURN_URL: "https://salon.test/appointment?token=secret" }]) assert.throws(() => parseEnv({ ...base, ...changes }));
   assert.equal(parseEnv({ ...base, NODE_ENV: "production", PAYMONGO_SECRET_KEY: "sk_live_dummy" }).PAYMENT_PROVIDER, "paymongo");
 });

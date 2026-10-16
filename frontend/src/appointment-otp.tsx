@@ -20,18 +20,23 @@ export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appoi
   const sending = useRef(false);
   useEffect(() => {
     let active = true;
-    void api<{ available: boolean; channels: Array<"SMS" | "EMAIL"> }>("/appointments/otp/options").then(async options => {
-      if (!active) return;
-      setChannels(options.channels);
-      if (options.channels.length) setChannel(options.channels[0]!);
-      else setError("Appointment verification is unavailable. Try again later or contact the salon.");
+    // Restoring checkout access must also work when OTP delivery is disabled.
+    void (async () => {
       try {
         const result = await api<{ appointment: Appointment }>("/appointments/otp/session");
         if (active) verified.current(result.appointment);
+        return;
       } catch (err) {
         if (active && !(err instanceof ApiError && err.status === 401)) setError("Could not restore your visit. You can request a new code below.");
       }
-    }).catch(() => { if (active) setError("Appointment verification is unavailable. Try again later or contact the salon."); });
+      try {
+        const options = await api<{ available: boolean; channels: Array<"SMS" | "EMAIL"> }>("/appointments/otp/options");
+        if (!active) return;
+        setChannels(options.channels);
+        if (options.channels.length) setChannel(options.channels[0]!);
+        else setError("Appointment verification is unavailable. Try again later or contact the salon.");
+      } catch { if (active) setError("Appointment verification is unavailable. Try again later or contact the salon."); }
+    })();
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -83,7 +88,7 @@ export function AppointmentOtp({ onVerified }: { onVerified: (appointment: Appoi
         <button className="primary" disabled={busy}>{busy ? "Please wait…" : "Verify and view appointment"}</button>
         <button type="button" disabled={busy || cooldown > 0} onClick={() => void requestCode()}>{cooldown ? `Resend in ${cooldown}s` : "Resend code"}</button>
         <button type="button" disabled={busy} onClick={() => { setChallengeId(""); setNotice(""); setCode(""); setError(""); }}>Change booking details or method</button>
-        <p className="muted">Your appointment stays accessible on this browser for two hours. Use “Close appointment” when finished on a shared device.</p>
+        <p className="muted">Your appointment stays accessible on this browser for two hours. Use “Back to home” to end your appointment session when finished on a shared device.</p>
       </form>}
     </>}
     {error && <p role="alert" className="error">{error}</p>}

@@ -736,22 +736,25 @@ test("correction rejects occupied intervals including live payment holds, inacti
   await prisma.appointmentService.update({ where: { id: other.booking.appointmentServices[0]!.id }, data: {
     staffId: f.staff.id, scheduledStartAt: f.startAt, scheduledEndAt: f.endAt, reservedUntilAt: f.reservedUntilAt,
   } });
-  await assert.rejects(changes.correctNoShow(adminId, f.correction));
+  await assert.rejects(changes.correctNoShow(cashierId, f.correction));
   await prisma.appointment.update({ where: { id: other.booking.id }, data: { status: "CONFIRMED" } });
-  await assert.rejects(changes.correctNoShow(adminId, f.correction));
+  await assert.rejects(changes.correctNoShow(cashierId, f.correction));
   await prisma.appointment.update({ where: { id: other.booking.id }, data: { status: "CANCELLED" } });
   await prisma.staff.update({ where: { id: f.staff.id }, data: { isActive: false } });
-  await assert.rejects(changes.correctNoShow(adminId, f.correction));
+  await assert.rejects(changes.correctNoShow(cashierId, f.correction));
   await prisma.staff.update({ where: { id: f.staff.id }, data: { isActive: true } });
   await prisma.staffService.update({ where: { id: f.qualification.id }, data: { isActive: false } });
-  await assert.rejects(changes.correctNoShow(adminId, f.correction));
+  await assert.rejects(changes.correctNoShow(cashierId, f.correction));
   assert.equal((await prisma.appointment.findUniqueOrThrow({ where: { id: f.booking.id } })).status, "NO_SHOW");
   assert.equal(await prisma.auditLog.count({ where: { entityId: f.booking.id, action: "BOOKING_NO_SHOW_CORRECTED" } }), 0);
 });
 
-test("correction rejects replacements, ended visits, Cashier access, inactive Admins and blank reasons", async t => {
+test("correction rejects replacements, ended visits, inactive accounts and blank reasons", async t => {
   const f = await correctionFixture(t); if (!f) return;
-  await assert.rejects(changes.correctNoShow(cashierId, f.correction));
+  await assert.rejects(changes.correctNoShow(cashierId, { ...f.correction, reason: "  " }));
+  await prisma.user.update({ where: { id: cashierId }, data: { isActive: false } });
+  try { await assert.rejects(changes.correctNoShow(cashierId, f.correction), { code: "UNAUTHORIZED" }); }
+  finally { await prisma.user.update({ where: { id: cashierId }, data: { isActive: true } }); }
   await assert.rejects(changes.correctNoShow(adminId, { ...f.correction, reason: "  " }));
   await prisma.user.update({ where: { id: adminId }, data: { isActive: false } });
   try { await assert.rejects(changes.correctNoShow(adminId, f.correction)); }
@@ -793,7 +796,7 @@ test("correction restores nothing when its audit insert fails", async t => {
   }
 });
 
-test("correction HTTP requires Admin authentication, trusted origin and explicit presence", async t => {
+test("correction HTTP allows Cashier/Admin and requires authentication, trusted origin and explicit presence", async t => {
   const f = await correctionFixture(t); if (!f) return;
   const config = parseEnv({ DATABASE_URL: url.toString(), JWT_SECRET: "correction-test-secret-at-least-32-characters", NODE_ENV: "test" });
   const server = createApp(createApiRouter(prisma, config)).listen(0, "127.0.0.1"); await once(server, "listening");
@@ -804,13 +807,16 @@ test("correction HTTP requires Admin authentication, trusted origin and explicit
     assert.equal((await post(path, f.correction)).status, 401);
     const cashierLogin = await post("/auth/login", { email: "cashier@example.test", password: "phase5-cashier-password" });
     const cashierCookie = cashierLogin.headers.get("set-cookie")!.split(";")[0]!;
-    assert.equal((await post(path, f.correction, cashierCookie)).status, 403);
+    assert.equal((await post(path, f.correction, cashierCookie, "https://attacker.test")).status, 403);
+    assert.equal((await post(path, { ...f.correction, customerPresent: false }, cashierCookie)).status, 400);
     const login = await post("/auth/login", { email: "admin@example.test", password: "phase5-admin-password" });
     const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
     assert.equal((await post(path, f.correction, cookie, "https://attacker.test")).status, 403);
     assert.equal((await post(path, { ...f.correction, customerPresent: false }, cookie)).status, 400);
     assert.equal((await post(path, { ...f.correction, checkedInAt: new Date().toISOString() }, cookie)).status, 400);
-    assert.equal((await post(path, f.correction, cookie)).status, 200);
+    assert.equal((await post(path, f.correction, cashierCookie)).status, 200);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entityId: f.booking.id, action: "BOOKING_NO_SHOW_CORRECTED" } });
+    assert.equal(audit.actorType, "CASHIER"); assert.equal(audit.actorUserId, cashierId);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
@@ -829,4 +835,17 @@ test("rescheduling and recovery reject duplicate services and categories without
     assert.deepEqual(await prisma.appointment.findUniqueOrThrow({ where: { id: f.appointment.id }, include: { appointmentServices: true } }), before);
     assert.equal(await prisma.appointment.count(), count);
   }
+});
+
+
+test("concurrent Cashier and Admin no-show corrections restore once and retain the winning actor", async t => {
+  const f = await correctionFixture(t); if (!f) return;
+  const results = await Promise.allSettled([changes.correctNoShow(cashierId, f.correction), changes.correctNoShow(adminId, f.correction)]);
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
+  const row = await prisma.appointment.findUniqueOrThrow({ where: { id: f.booking.id } });
+  assert.equal(row.status, "CONFIRMED"); assert.ok(row.checkedInAt);
+  const audits = await prisma.auditLog.findMany({ where: { entityId: row.id, action: "BOOKING_NO_SHOW_CORRECTED" } });
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0]!.actorUserId, row.checkedInByUserId);
+  assert.equal(audits[0]!.actorType, row.checkedInByUserId === cashierId ? "CASHIER" : "ADMIN");
 });

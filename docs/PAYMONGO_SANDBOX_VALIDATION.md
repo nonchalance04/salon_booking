@@ -30,7 +30,7 @@ before going live. [Official test-mode documentation](https://docs.paymongo.com/
 | Secret Test API key, `sk_test_...` | PayMongo Developers/API Keys | `PAYMONGO_SECRET_KEY` in `backend/.env` |
 | Webhook endpoint signing secret | The registered PayMongo webhook endpoint | `PAYMONGO_WEBHOOK_SECRET` in `backend/.env` |
 | Public HTTPS tunnel origin | ngrok's forwarding output | Prefix of the webhook URL registered with PayMongo |
-| Frontend return URL | Your frontend's `/appointment` page | `PAYMONGO_RETURN_URL` in `backend/.env` |
+| Frontend return URL | Your frontend's `/booking-confirmed` page | `PAYMONGO_RETURN_URL` in `backend/.env` |
 
 The API secret authenticates your server's requests to PayMongo. The webhook
 secret verifies PayMongo's incoming callbacks. They are different values; do not
@@ -44,7 +44,7 @@ Customer browser -> http://127.0.0.1:5173/availability
 Frontend /api requests -> Vite proxy -> API port 3000
 API -> PayMongo -> hosted GCash checkout opens in another browser tab
 PayMongo webhook -> https://YOUR_TUNNEL/api/payments/provider/events -> API
-Customer return -> http://127.0.0.1:5173/appointment
+Customer return -> http://127.0.0.1:5173/booking-confirmed
 ```
 
 The callback is a server-to-server POST; the return URL is a browser destination.
@@ -139,12 +139,22 @@ public HTTPS staging API or a development tunnel. Example with ngrok:
 
 4. Copy the HTTPS forwarding origin shown, e.g. `https://YOUR_HOST.ngrok-free.app`.
 5. Check `https://YOUR_HOST.ngrok-free.app/api/health` reaches the API.
-6. Keep the tunnel running. Forward to port 3000, not frontend port 5173. Ensure
+6. Keep the tunnel running. For API-only tunneling with a local frontend return
+   URL, forward to port 3000. Ensure
    the webhook path is reachable without browser login/interstitial challenges.
 
 Use your assigned host, not the literal example. If the tunnel host changes,
 update the registered PayMongo webhook endpoint. The tunnel origin does not need
 adding to TRUSTED_ORIGINS: the callback authenticates a provider signature.
+
+If customers open the salon or return from PayMongo on the **public ngrok host**,
+run `ngrok http 5173` instead, with both Vite and the backend running. Vite serves
+`/booking-confirmed` and proxies `/api` (including provider webhooks) to port 3000.
+Add the public hostname to Vite `server.allowedHosts`, add its HTTPS origin to
+backend `TRUSTED_ORIGINS`, and use that same origin for `PUBLIC_SITE_URL` and
+`PAYMONGO_RETURN_URL` (with `/booking-confirmed` appended for the latter). Start booking
+on that public origin so the appointment session cookie is available on return.
+An API-only tunnel to port 3000 returns 404 for `/booking-confirmed`.
 
 ## 4. Register the test webhook
 
@@ -184,17 +194,17 @@ COOKIE_SAME_SITE=lax
 PAYMENT_PROVIDER=paymongo
 PAYMONGO_SECRET_KEY=sk_test_YOUR_ACTUAL_KEY
 PAYMONGO_WEBHOOK_SECRET=YOUR_ACTUAL_ENDPOINT_SIGNING_SECRET
-PAYMONGO_RETURN_URL=http://127.0.0.1:5173/appointment
+PAYMONGO_RETURN_URL=http://127.0.0.1:5173/booking-confirmed
 ```
 
 Edit existing entries rather than appending duplicate names. Leave
 `PAYMENT_TEST_SECRET` blank or unused; PayMongo sandbox still uses
 `PAYMENT_PROVIDER=paymongo`, not `test`. Do not include a trailing slash after
-`/appointment`. The full configuration must retain valid `DATABASE_URL` and
+`/booking-confirmed`. The full configuration must retain valid `DATABASE_URL` and
 `JWT_SECRET` values from your system setup.
 
 The return URL is the frontend, not the API tunnel. It must use a configured
-trusted origin and the exact `/appointment` path, without query parameters,
+trusted origin and the exact `/booking-confirmed` path, without query parameters,
 fragment, or guest token. Keep DATABASE_URL and JWT_SECRET valid; JWT_SECRET needs
 at least 32 characters. PAYMENT_TEST_SECRET is unused with provider `paymongo`.
 Use a test key: development rejects live keys. Never edit `.env.example` with
@@ -252,7 +262,7 @@ fee/deadline if policy differs. Complete payment well before expiration.
 ## 8. Create and complete the merchant checkout
 
 1. Click Pay with GCash. Expect a pending attempt and checkout link.
-2. Click Continue to GCash on PayMongo. It opens a separate tab.
+2. Click Continue to GCash on PayMongo. It opens in the current tab.
 3. Verify the hosted fee matches the booking and GCash is offered.
 4. Follow the test e-wallet flow. PayMongo documents Authorize/Fail options on
    its test e-wallet page; choose success/Authorize when presented. Hosted UI
@@ -260,8 +270,13 @@ fee/deadline if policy differs. Complete payment well before expiration.
    test e-wallet flow. [Testing reference](https://docs.paymongo.com/docs/payment-acceptance-testing)
 5. Complete success. Record the test merchant session `cs_...` and captured
    payment `pay_...` identifiers privately where available.
-6. Keep the original booking tab. A return to `/appointment` may show retrieval
-   guidance; use that original tab or your saved private link.
+6. Return to `/booking-confirmed` in the checkout tab. Checkout establishes a two-hour
+   HttpOnly appointment session, so the booking restores on the same browser.
+   Pending payments are verified automatically; only a confirmed booking shows
+   the Booking Confirmed page. Cancelled/failed checkout never implies success.
+   If the session expired or cookies were cleared, use your private
+   link, or OTP verification. A verified successful PayMongo payment automatically issues its e-receipt.
+   Use Download E-Receipt to preview it, then Print / Save as PDF.
 
 ## 9. Prove webhook delivery independently
 
@@ -271,7 +286,7 @@ merchant dashboard or tunnel request inspector:
 1. Find the `checkout_session.payment.paid` event for this session.
 2. Verify it was delivered to the exact registered callback URL.
 3. Verify the application's response is HTTP 200 with `{"received":true}`.
-4. In the original booking tab click Refresh status (this reads the local booking,
+4. On the restored booking page click Refresh status if available (this reads the local booking,
    unlike Check payment status, which explicitly queries PayMongo).
 5. Expect CONFIRMED and one SUCCEEDED payment for the fee.
 
@@ -427,7 +442,7 @@ It is a configuration procedure; this guide has not deployed or enabled it for y
    PAYMENT_PROVIDER=paymongo
    PAYMONGO_SECRET_KEY=sk_live_YOUR_ACTUAL_LIVE_KEY
    PAYMONGO_WEBHOOK_SECRET=YOUR_LIVE_ENDPOINT_SIGNING_SECRET
-   PAYMONGO_RETURN_URL=https://salon.example.com/appointment
+   PAYMONGO_RETURN_URL=https://salon.example.com/booking-confirmed
    ```
 
    Replace the example domain and values. Preserve the production database/JWT

@@ -43,7 +43,7 @@ async function view(tx: Tx, row: Row, admin: boolean) {
     customer: { firstName: row.customer.firstName, lastName: row.customer.lastName },
     eligibleAppointmentFee: (await eligibleFee(tx, row)).toFixed(2), carriedFee: Boolean(row.carriedAppointmentFeePaymentId),
     amountDue: row.appointmentServices.filter(s => s.outcome === "PERFORMED").reduce((n, s) => n.plus(s.actualChargedAmount ?? 0), new Prisma.Decimal(0)).toFixed(2),
-    services: row.appointmentServices.map(s => ({ id: s.id, name: s.serviceNameSnapshot, staff: `${s.staff.firstName} ${s.staff.lastName}`, outcome: s.outcome,
+    services: row.appointmentServices.map(s => ({ id: s.id, name: s.serviceNameSnapshot, staff: `${s.staff?.firstName ?? s.staffFirstNameSnapshot} ${s.staff?.lastName ?? s.staffLastNameSnapshot}`.trim() || "Former staff", outcome: s.outcome,
       price: s.priceSnapshot.toFixed(2), actualChargedAmount: s.actualChargedAmount?.toFixed(2) ?? null })),
     payments: row.payments.map(p => ({ id: p.id, type: p.type, status: p.status, amount: p.amount.toFixed(2), receipt: p.receipt ? { receiptNumber: p.receipt.receiptNumber, receiptSnapshot: p.receipt.receiptSnapshot } : null })),
     ...(admin ? { commissions: row.commissionRecords.map(c => ({ appointmentServiceId: c.appointmentServiceId, staffId: c.staffId,
@@ -65,7 +65,7 @@ export function createSettlementService(prisma: PrismaClient) {
     async outcomes(actorId: string, raw: OutcomesInput) {
       const input = outcomesSchema.parse(raw);
       return transact(async tx => {
-        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId, "ADMIN"); editable(row, input.revision);
+        const row = await locked(tx, input.bookingCode); const actor = await authorize(tx, actorId); editable(row, input.revision);
         if (new Set(input.services.map(s => s.id)).size !== row.appointmentServices.length || input.services.length !== row.appointmentServices.length || input.services.some(s => !row.appointmentServices.some(r => r.id === s.id))) throw fail("INVALID_SERVICES", "Submit each active service exactly once.");
         for (const s of row.appointmentServices) {
           const outcome = input.services.find(i => i.id === s.id)!.outcome;

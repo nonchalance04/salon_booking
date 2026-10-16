@@ -434,12 +434,12 @@ model Receipt {
   id              String   @id @default(uuid()) @db.Uuid
   paymentId       String   @unique @db.Uuid
   receiptNumber   String   @unique
-  issuedByUserId  String   @db.Uuid
+  issuedByUserId  String?  @db.Uuid
   receiptSnapshot Json
   issuedAt        DateTime @default(now()) @db.Timestamptz(3)
 
   payment  Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  issuedBy User    @relation(fields: [issuedByUserId], references: [id], onDelete: Restrict)
+  issuedBy User?   @relation(fields: [issuedByUserId], references: [id], onDelete: Restrict)
 }
 
 model CommissionRecord {

@@ -227,10 +227,10 @@ export function PublicSite() {
   if (["/booking", "/availability"].includes(path))
     content = <PublicBooking salon={salon} />;
   else if (
-    ["/a", "/appointment", "/manage", "/payment"].includes(path) ||
+    ["/a", "/appointment", "/booking-confirmed", "/manage", "/payment"].includes(path) ||
     path.startsWith("/confirmation/")
   )
-    content = <GuestAppointment embedded />;
+    content = <GuestAppointment embedded salon={salon} />;
   else if (path === "/help") content = <Chatbot embedded />;
   else if (path === "/about")
     content = (

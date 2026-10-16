@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ConfirmedServices } from "./confirmed-services";
-import type { Section } from "./configuration.fields";
 export type AppointmentFilters = {
   from?: string;
   to?: string;
@@ -43,18 +42,8 @@ const money = (value: string, currency = "PHP") =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(
     Number(value),
   );
-export function AdminDashboard({
-  onAppointments,
-  onPayments,
-  onSettlement,
-  onReport,
-  onConfiguration,
-}: {
-  onAppointments: (filters: AppointmentFilters) => void;
-  onPayments: () => void;
+export function AdminDashboard({ onSettlement }: {
   onSettlement: (code: string) => void;
-  onReport: (kind: string) => void;
-  onConfiguration: (section: Section) => void;
 }) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [collections, setCollections] = useState<Collections | null>(null);
@@ -116,16 +105,15 @@ export function AdminDashboard({
       timeStyle: "short",
     }).format(new Date(value));
   return (
-    <section aria-labelledby="admin-dashboard-title" aria-busy={busy}>
+    <section aria-label="Admin dashboard" aria-busy={busy}>
       <div className="section-heading">
         <div>
           <p className="eyebrow">DAILY OVERVIEW</p>
-          <h2 id="admin-dashboard-title">Your salon, at a glance</h2>
-          <p className="muted">
+          {/* <p className="muted">
             {data
               ? `${date} · ${data.timeZone} · Updated ${updated}`
               : "Today’s appointments and priorities"}
-          </p>
+          </p> */}
         </div>
         {/* <button disabled={busy} onClick={() => void load()}>
           {busy ? "Refreshing…" : "Refresh dashboard"}
@@ -141,51 +129,42 @@ export function AdminDashboard({
           Loading salon activity…
         </p>
       )}
-      {/* <WaitingQueue onSelect={onSettlement} /> */}
-      <ConfirmedServices admin onSelect={onSettlement} />
-      {data && collections && (
+      {data && (
         <>
           <h3>What needs attention</h3>
           <p className="muted">
-            Open a card to review its records. Pending fees, unsettled services,
-            and reconciliation include all dates.
+            Pending fees, unsettled services, and reconciliation include all dates.
           </p>
           <div className="admin-action-grid">
-            <button
-              className="admin-action-card"
-              onClick={() => onAppointments({ from: date, to: date })}
-            >
+            <div className="admin-action-card">
               <span>Today’s appointments</span>
               <strong>
                 {data.appointments.reduce((total, row) => total + row.count, 0)}
               </strong>
-              <small>All booking statuses · View appointments →</small>
-            </button>
-            <button
-              className="admin-action-card"
-              onClick={() => onAppointments({ attention: "pending-fees" })}
-            >
+              <small>All booking statuses</small>
+            </div>
+            <div className="admin-action-card">
               <span>Pending appointment fees</span>
               <strong>{data.attention.pendingFees}</strong>
-              <small>Active payment holds · Review fees →</small>
-            </button>
-            <button
-              className="admin-action-card"
-              onClick={() => onAppointments({ attention: "unsettled" })}
-            >
+              <small>Active payment holds</small>
+            </div>
+            <div className="admin-action-card">
               <span>Unsettled services</span>
               <strong>{data.attention.unsettled}</strong>
-              <small>Confirmed bookings whose start time has passed →</small>
-            </button>
-            <button
-              className={`admin-action-card${data.attention.reconciliation ? " needs-attention" : ""}`}
-              onClick={onPayments}
-            >
+              <small>Confirmed bookings whose start time has passed</small>
+            </div>
+            <div className={`admin-action-card${data.attention.reconciliation ? " needs-attention" : ""}`}>
               <span>Payment reconciliation</span>
               <strong>{data.attention.reconciliation}</strong>
-              <small>Successful captures requiring review →</small>
-            </button>
+              <small>Successful captures requiring review</small>
+            </div>
           </div>
+        </>
+      )}
+      {/* <WaitingQueue onSelect={onSettlement} /> */}
+      <ConfirmedServices admin onSelect={onSettlement} />
+      {data && collections && (
+        <>
           <div className="admin-panel">
             <div className="section-heading">
               <div>
@@ -194,9 +173,6 @@ export function AdminDashboard({
                   Collections use capture time; commissions use finalization time.
                 </p>
               </div>
-              <button onClick={() => onReport("payments")}>
-                View financial reports
-              </button>
             </div>
             {(collections.totals.length
               ? collections.totals
@@ -221,17 +197,13 @@ export function AdminDashboard({
                 </div>
               </div>
             ))}
-            <button
-              className="admin-commission"
-              onClick={() => onReport("commissions")}
-            >
+            <div className="admin-commission">
               <span>
                 Finalized commissions{" "}
                 <small>{data.commissionCount} records · PHP</small>
               </span>
               <strong>{money(data.finalizedCommissions)}</strong>
-              <span aria-hidden="true">→</span>
-            </button>
+            </div>
             <p className="muted admin-note">
               Net collections reflect recorded payment adjustments. Commissions
               are shown separately and are not deducted here. Carried booking
@@ -252,9 +224,6 @@ export function AdminDashboard({
               <section>
                 <div className="section-heading">
                   <h4>Salon closures</h4>
-                  <button onClick={() => onConfiguration("closures")}>
-                    Manage closures
-                  </button>
                 </div>
                 {data.scheduling.closures.length ? (
                   data.scheduling.closures.map((row) => (
@@ -263,26 +232,6 @@ export function AdminDashboard({
                       <p>
                         {format(row.startsAt)} – {format(row.endsAt)}
                       </p>
-                      <button
-                        onClick={() =>
-                          onAppointments({
-                            from: new Intl.DateTimeFormat("en-CA", {
-                              timeZone: data.timeZone,
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                            }).format(new Date(row.startsAt)),
-                            to: new Intl.DateTimeFormat("en-CA", {
-                              timeZone: data.timeZone,
-                              year: "numeric",
-                              month: "2-digit",
-                              day: "2-digit",
-                            }).format(new Date(row.endsAt)),
-                          })
-                        }
-                      >
-                        Review bookings on these dates
-                      </button>
                     </article>
                   ))
                 ) : (
@@ -292,9 +241,6 @@ export function AdminDashboard({
               <section>
                 <div className="section-heading">
                   <h4>Staff absences</h4>
-                  <button onClick={() => onConfiguration("unavailability")}>
-                    Manage time off
-                  </button>
                 </div>
                 {data.scheduling.absences.length ? (
                   data.scheduling.absences.map((row) => (
@@ -306,29 +252,6 @@ export function AdminDashboard({
                         {format(row.startsAt)} – {format(row.endsAt)}
                       </p>
                       <small>{row.reason || "Scheduled time off"}</small>
-                      <p>
-                        <button
-                          onClick={() =>
-                            onAppointments({
-                              staffId: row.staffId,
-                              from: new Intl.DateTimeFormat("en-CA", {
-                                timeZone: data.timeZone,
-                                year: "numeric",
-                                month: "2-digit",
-                                day: "2-digit",
-                              }).format(new Date(row.startsAt)),
-                              to: new Intl.DateTimeFormat("en-CA", {
-                                timeZone: data.timeZone,
-                                year: "numeric",
-                                month: "2-digit",
-                                day: "2-digit",
-                              }).format(new Date(row.endsAt)),
-                            })
-                          }
-                        >
-                          Review stylist bookings on these dates
-                        </button>
-                      </p>
                     </article>
                   ))
                 ) : (
@@ -338,8 +261,7 @@ export function AdminDashboard({
             </div>
             <p className="admin-note muted">
               Configuration changes that would invalidate reservations are
-              blocked. Review the affected bookings listed with the conflict
-              before retrying a change.
+              blocked. Affected bookings are listed with the conflict in configuration.
             </p>
           </div>
         </>

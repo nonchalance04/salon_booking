@@ -1349,7 +1349,7 @@ Represents a receipt for a successful financial transaction.
   - Unique
 
 - `issuedByUserId`
-  - FK → User
+  - Nullable FK → User; null identifies automatic system issuance for verified PayMongo appointment-fee captures.
 
 - `receiptSnapshot`
   - JSON
