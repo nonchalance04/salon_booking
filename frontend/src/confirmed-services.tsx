@@ -50,7 +50,7 @@ export function ConfirmedServices({
     setError("");
     const query = new URLSearchParams({
       page: String(page),
-      pageSize: "25",
+      pageSize: "5",
       search,
     });
     if (arrivalOnly) query.set("arrivalToday", "true");

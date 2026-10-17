@@ -1,3 +1,4 @@
+import { createPaymentKey } from "./payment-key";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ReceiptView } from "./receipt";
 import { api } from "./api";
@@ -9,7 +10,8 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
   const [options, setOptions] = useState<{ onlineAvailable: boolean; testMode: boolean; sandbox: boolean } | null>(null);
   const [payment, setPayment] = useState<FeePayment | null>(pending ?? null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const key = useRef(crypto.randomUUID());
+  const key = useRef("");
+  if (!key.current) key.current = createPaymentKey();
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -36,7 +38,7 @@ export function FeePaymentControls({ bookingCode, token, onChange, pending }: { 
     sending.current = true; setBusy(true); setError("");
     try {
       await api("/payments/test-capture", { method: "POST", body: JSON.stringify({ bookingCode, token, paymentId: payment.id, outcome }) });
-      if (outcome === "FAILED") { key.current = crypto.randomUUID(); setPayment(null); setError("Test payment failed. You can try again while the hold is active."); }
+      if (outcome === "FAILED") { key.current = createPaymentKey(); setPayment(null); setError("Test payment failed. You can try again while the hold is active."); }
       await onChange();
     } catch (err) { setError(message(err)); }
     finally { sending.current = false; setBusy(false); }
@@ -78,7 +80,8 @@ export function PaymentsWorkspace({ admin, initialCode }: { admin: boolean; init
   const [booking, setBooking] = useState<StaffBooking | null>(null);
   const [busy, setBusy] = useState(false);
   const sending = useRef(false);
-  const key = useRef(crypto.randomUUID());
+  const key = useRef("");
+  if (!key.current) key.current = createPaymentKey();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [review, setReview] = useState<ReviewPayment[]>([]);
@@ -103,13 +106,13 @@ export function PaymentsWorkspace({ admin, initialCode }: { admin: boolean; init
     await act(async () => {
       const { payment } = await api<{ payment: FeePayment & { appointment: { status: string } } }>("/payments/manual", { method: "POST", body: JSON.stringify({ bookingCode: booking.bookingCode,
         amount: booking.appointmentFeeAmount, currency: "PHP", method: String(data.get("method")), idempotencyKey: key.current }) });
-      key.current = crypto.randomUUID();
+      key.current = createPaymentKey();
       setNotice(`Payment recorded${payment.reconciliationStatus === "REQUIRED" ? " for reconciliation" : ""}. Booking status: ${payment.appointment.status.replaceAll("_", " ")}.`);
       await lookup(booking.bookingCode); if (admin) await loadReview();
     });
   }
   return <section className="payments-workspace"><h2>Appointment-fee payments</h2><p>Record money already received. A salon payment reference is generated automatically and included on the receipt.</p>
-    <form className="account-form" onSubmit={event => { event.preventDefault(); const code = String(new FormData(event.currentTarget).get("code")).trim(); void act(async () => { await lookup(code); key.current = crypto.randomUUID(); }); }}>
+    <form className="account-form" onSubmit={event => { event.preventDefault(); const code = String(new FormData(event.currentTarget).get("code")).trim(); void act(async () => { await lookup(code); key.current = createPaymentKey(); }); }}>
       <label>Booking code<input name="code" required maxLength={100} defaultValue={initialCode} /></label><button disabled={busy}>Find booking</button>
     </form>
     {booking && <div className="account-form"><h3>{booking.bookingCode} · {booking.customer.firstName} {booking.customer.lastName}</h3><p>Status: {booking.status} · Appointment fee: PHP {booking.appointmentFeeAmount}</p>

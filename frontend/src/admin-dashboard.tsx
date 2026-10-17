@@ -1,5 +1,5 @@
 // import { WaitingQueue } from "./waiting-queue";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { ConfirmedServices } from "./confirmed-services";
 export type AppointmentFilters = {
@@ -165,7 +165,7 @@ export function AdminDashboard({ onSettlement }: {
       <ConfirmedServices admin onSelect={onSettlement} />
       {data && collections && (
         <>
-          <div className="admin-panel">
+          <section aria-label="Today’s financial summary">
             <div className="section-heading">
               <div>
                 <h3>Today’s financial summary</h3>
@@ -174,43 +174,45 @@ export function AdminDashboard({ onSettlement }: {
                 </p>
               </div>
             </div>
-            {(collections.totals.length
-              ? collections.totals
-              : [
-                  {
-                    currency: "PHP",
-                    captured: "0",
-                    netCashMovement: "0",
-                  },
-                ]
-            ).map((total) => (
-              <div className="admin-finance-grid" key={total.currency}>
-                <div>
-                  <small>Collections · {total.currency}</small>
-                  <strong>{money(total.captured, total.currency)}</strong>
-                </div>
-                <div>
-                  <small>Net collections · {total.currency}</small>
-                  <strong>
-                    {money(total.netCashMovement, total.currency)}
-                  </strong>
-                </div>
+            <div className="admin-action-grid admin-financial-cards">
+              {(collections.totals.length
+                ? collections.totals
+                : [
+                    {
+                      currency: "PHP",
+                      captured: "0",
+                      netCashMovement: "0",
+                    },
+                  ]
+              ).map((total) => (
+                <Fragment key={total.currency}>
+                  <div className="admin-action-card">
+                    <span>Collections · {total.currency}</span>
+                    <strong>{money(total.captured, total.currency)}</strong>
+                    <small>Captured today</small>
+                  </div>
+                  <div className="admin-action-card">
+                    <span>Net collections · {total.currency}</span>
+                    <strong>
+                      {money(total.netCashMovement, total.currency)}
+                    </strong>
+                    <small>Includes recorded payment adjustments</small>
+                  </div>
+                </Fragment>
+              ))}
+              <div className="admin-action-card">
+                <span>Finalized commissions · PHP</span>
+                <strong>{money(data.finalizedCommissions)}</strong>
+                <small>{data.commissionCount} records finalized today</small>
               </div>
-            ))}
-            <div className="admin-commission">
-              <span>
-                Finalized commissions{" "}
-                <small>{data.commissionCount} records · PHP</small>
-              </span>
-              <strong>{money(data.finalizedCommissions)}</strong>
             </div>
             <p className="muted admin-note">
               Net collections reflect recorded payment adjustments. Commissions
               are shown separately and are not deducted here. Carried booking
               credits are not new collections.
             </p>
-          </div>
-          <div className="admin-panel">
+          </section>
+          {/* <div className="admin-panel">
             <div className="section-heading">
               <div>
                 <h3>Scheduling · next 7 days</h3>
@@ -263,7 +265,7 @@ export function AdminDashboard({ onSettlement }: {
               Configuration changes that would invalidate reservations are
               blocked. Affected bookings are listed with the conflict in configuration.
             </p>
-          </div>
+          </div> */}
         </>
       )}
     </section>
